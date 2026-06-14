@@ -1,0 +1,15 @@
+# workflow
+- Before implementing code changes, explain the plan and show every file that will be changed first, and include the actual SQL/code in the explanation, waiting for explicit user approval before writing to any file. Confidence: 0.85
+- Before building new features/modules, audit existing auto-execution systems to verify they make real API calls (not mocked/simulated) and are production-ready; check each action for credentials, mock data, and broken paths before expanding scope. Confidence: 0.70
+- When designing agent memory/context systems, use filtered retrieval (by category and tags) rather than injecting all memories into every agent execution — scope context to relevant information only. Confidence: 0.75
+- Deliver features in incremental phases (e.g., Phase 1 = store only, Phase 2 = retrieval separately) rather than implementing the full system at once. Confidence: 0.65
+- Prefer targeted edits (insert/update specific lines or sections) over rewriting entire files when only small changes are needed. Confidence: 0.70
+- Before fixing a migration ordering bug, verify and prove that the bug actually exists by showing the exact failure mechanism and affected statements. Confidence: 0.65
+- Before calling server-side logic (e.g., executeCommand) from a client component, verify security implications (API key exposure, server vs. client boundaries) and recommend the safest architecture (server action vs. API route vs. direct call). Confidence: 0.65
+- Prefer reusing existing infrastructure (tables, functions, types) over creating new ones; keep each implementation MVP and minimal by building on what already exists. Confidence: 0.60
+- After completing each feature, generate a Git commit message summarizing what was changed. Confidence: 0.70
+- After completing each feature, list all modified files in a table with their action (created/edited) and purpose. Confidence: 0.70
+- After completing each feature, summarize the architecture changes made. Confidence: 0.70
+- Stop and wait for user approval after each feature completes before starting the next one; never build multiple major systems without an intervening successful build. Confidence: 0.70
+- When the user enters "production hardening mode", stop building new modules and follow the explicit phase priority order: 1) OAuth integrations, 2) real lead APIs, 3) connect engines to real data, 4) real bookings, 5) remove all mocks. No new departments, no new pages unless required, no simulations, no fake data. Confidence: 0.85
+- When the user redirects to "Production Sprint Only", ship only features testable end-to-end today: 1) Gmail OAuth working, 2) LinkedIn OAuth working, 3) LinkedIn post publishing, 4) Gmail outreach, 5) daily content scheduler, 6) daily growth cron, 7) production readiness dashboard. Do not build mock providers, new modules, or new architecture. Confidence: 0.70
