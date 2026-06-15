@@ -1,16 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { createServerClient, parseCookieHeader, serializeCookieHeader } from '@supabase/ssr'
+import { createServerClient, parseCookieHeader } from '@supabase/ssr'
 
 const publicRoutes = ['/login', '/signup', '/']
-const dashboardRoutes = [
-  '/dashboard',
-  '/dashboard/clients',
-  '/dashboard/projects',
-  '/dashboard/tasks',
-  '/dashboard/finance',
-  '/dashboard/brain',
-  '/dashboard/agents',
-]
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -47,16 +38,8 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   } else {
-    // If user is not authenticated
-    // Allow public routes
-    if (publicRoutes.includes(path) || !path.startsWith('/')) {
-      return response
-    }
-
-    // Check if accessing dashboard routes without authentication
-    const isDashboardRoute = dashboardRoutes.some(route => path.startsWith(route))
-    
-    if (isDashboardRoute) {
+    // If user is not authenticated, protect all /dashboard/* routes
+    if (path.startsWith('/dashboard')) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
   }

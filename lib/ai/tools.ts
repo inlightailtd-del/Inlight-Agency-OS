@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getWorkflowMemory, getMemoryContext, type AgentMemoryRow } from './memory'
+import { formatContextBlock } from '@/lib/brain/context'
 
 export interface Tool {
   name: string
@@ -11,13 +12,18 @@ export interface Tool {
 
 const brainSearchTool: Tool = {
   name: 'company_brain_search',
-  description: 'Search previous workflow outputs and agent memories',
+  description: 'Search Company Brain via vector similarity, keyword search, and agent memory. Returns relevant knowledge, past decisions, and current agency state.',
   async execute(supabase, userId, input) {
-    const memories = await getWorkflowMemory(supabase, userId, [], 5)
-    if (memories.length === 0) return 'No relevant memories found.'
-    return memories.map((m) =>
-      `[${m.content.stepLabel} (${m.content.workflowName})]: ${(m.content.output || '').slice(0, 300)}`
-    ).join('\n\n')
+    try {
+      const block = await formatContextBlock(supabase, userId, input)
+      return block || 'No relevant Company Brain context found.'
+    } catch {
+      const memories = await getWorkflowMemory(supabase, userId, [], 5)
+      if (memories.length === 0) return 'No relevant memories found.'
+      return memories.map((m) =>
+        `[${m.content.stepLabel} (${m.content.workflowName})]: ${(m.content.output || '').slice(0, 300)}`
+      ).join('\n\n')
+    }
   },
 }
 

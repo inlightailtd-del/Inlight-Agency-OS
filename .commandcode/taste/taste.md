@@ -4,6 +4,7 @@
 
 # code-style
 - Group technical audit/review reports into numbered sections with clear headings, tables, and completion percentages. Confidence: 0.70
+- When the user requests a pre-deployment audit, execute the full numbered checklist (verify git remote, latest commit, branch, migrations, missing tables, .env, Vercel compatibility, OAuth callbacks, middleware/auth, production build), return structured tables for each check with status, provide exact deployment commands (git push, supabase migration apply, vercel deploy), and give a clear "READY FOR DEPLOYMENT" or "BLOCKERS FOUND" verdict. Confidence: 0.70
 
 # workflow
 See [workflow/taste.md](workflow/taste.md)
@@ -12,6 +13,10 @@ See [workflow/taste.md](workflow/taste.md)
 - During production verification/end-to-end testing, show full proof at each step (API response + database rows + success/failure status) before proceeding to the next step; do not claim success without verifiable evidence. Confidence: 0.70
 - When the user explicitly demands "evidence only" verification mode, output raw evidence (API responses, DB rows, IDs, timestamps) without narrative summaries or assumptions; use a structured status format (VERIFIED / FAILED / MISSING) for each item. Confidence: 0.75
 - When debugging a non-working feature during production verification, follow a two-phase audit structure: Phase 1 — produce a numbered checklist of checks performed, then return a structured report with exact failing component, exact error message, file causing error, fix required, and "Ready / Not Ready" status. Phase 2 — apply the fix, then verify with a real API call (no mocks) and show database proof. Confidence: 0.75
+- When the user requests full validation of recently built features, run all five validation steps: (1) run pending migrations, (2) TypeScript typecheck, (3) production build, (4) fix ALL errors without exception, (5) test every execution mode with real evidence; do not start any new work until all five pass and evidence is shown. Confidence: 0.70
+
+# architecture
+- Design the Agent Runtime as generic infrastructure supporting scheduled, event-driven, and manual execution patterns, not tied to a single agent type or use case; support future multi-agent delegation as a first-class concern. Confidence: 0.70
 
 # integrations
 - Before executing OAuth flows (Facebook, LinkedIn, Gmail, etc.), first verify app registration details (App ID, redirect URI, required permissions, scopes), existing provider code status, and whether all prerequisite permissions exist in the external platform's app dashboard; return a structured "Ready / Not Ready" assessment with exact files/code changes required before proceeding. Confidence: 0.80

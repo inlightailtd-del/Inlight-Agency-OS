@@ -21,8 +21,8 @@ export class ArchGraphEngine {
       try {
         const files = this.walk(fullDir)
         for (const file of files.slice(0, 50)) {
-          const module = this.analyzeFile(file, dir)
-          if (module) modules.push(module)
+          const mod = this.analyzeFile(file, dir)
+          if (mod) modules.push(mod)
         }
       } catch {}
     }

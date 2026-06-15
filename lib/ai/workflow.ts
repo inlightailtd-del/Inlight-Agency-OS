@@ -206,16 +206,182 @@ const AGENCY_GROWTH_WORKFLOW: Workflow = {
   ],
 }
 
+// ─── Inlight Agency — Weekly Content Engine ──────────────────
+
+const INLIGHT_WEEKLY_CONTENT: Workflow = {
+  id: 'inlight-weekly-content',
+  name: 'Inlight Weekly Content Engine',
+  description: 'Research → Strategy → Writing → Publishing — Generate a full week of content for Inlight Agency',
+  steps: [
+    {
+      agentType: 'research',
+      agentId: null,
+      label: 'Topic Research',
+      systemPrompt: `You are a Research agent for Inlight Agency, an AI-powered agency operating system.
+Research the latest trends in: AI for agencies, solo founder scaling, agency automation, and AI content marketing.
+Identify 10-15 trending topics with high engagement potential.
+For each topic, note the angle, target audience (solo founder vs small agency), and why it would resonate.
+Output as a ranked list with brief rationale.`,
+    },
+    {
+      agentType: 'content',
+      agentId: null,
+      label: 'Content Planning',
+      systemPrompt: `You are a Content Strategist for Inlight Agency.
+Based on the topic research provided, create a 7-day content plan.
+Include for each day:
+- Platform (LinkedIn, Blog, Twitter, Newsletter)
+- Content format (post, article, thread, video, email)
+- Headline/title
+- Key message or hook
+- Call to action
+- Target word count or length
+Ensure variety across formats and platforms. Include at least 1 long-form blog post, 3 LinkedIn posts, and 1 newsletter.`,
+    },
+    {
+      agentType: 'content',
+      agentId: null,
+      label: 'Content Writing',
+      systemPrompt: `You are a Content Writer for Inlight Agency.
+Write the full content for each piece in the content plan below.
+Follow Inlight's brand voice: confident, technical but accessible, action-oriented, founder-first.
+For blog posts: use headings, bullet points, and a clear structure.
+For LinkedIn: keep it punchy and insight-driven, 800-1200 characters.
+For Twitter: sharp, quotable, under 280 characters.
+Output each piece with clear platform headers.`,
+    },
+  ],
+}
+
+// ─── Inlight Agency — Lead Generation Pipeline ──────────────
+
+const INLIGHT_LEAD_PIPELINE: Workflow = {
+  id: 'inlight-lead-pipeline',
+  name: 'Inlight Lead Generation Pipeline',
+  description: 'Research → Identify → Score → Outreach — Generate and qualify leads for Inlight Agency services',
+  steps: [
+    {
+      agentType: 'research',
+      agentId: null,
+      label: 'Market Segmentation',
+      systemPrompt: `You are a Market Research agent for Inlight Agency.
+Identify target segments for Inlight Agency OS platform.
+Focus on:
+- Solo agency founders (1-5 people)
+- Small digital agencies (5-20 people)
+- Agency operations roles
+
+For each segment, identify:
+- Where they hang out online (LinkedIn groups, forums, communities)
+- What problems they're actively trying to solve
+- What language they use to describe their pain points
+- What triggers them to look for a solution
+
+Provide actionable insights for lead sourcing.`,
+    },
+    {
+      agentType: 'automation',
+      agentId: null,
+      label: 'Lead Sourcing',
+      systemPrompt: `You are a Lead Sourcing agent for Inlight Agency.
+Based on the market research below, create a lead sourcing strategy.
+Identify:
+- 5 LinkedIn groups where target prospects congregate
+- 3-5 relevant hashtags to monitor
+- Key search terms for finding prospects
+- Ideal profile signals (job titles, company size, content they share)
+- Outreach message templates per segment
+
+Output a structured sourcing plan that can be executed immediately.`,
+    },
+    {
+      agentType: 'sales',
+      agentId: null,
+      label: 'Lead Scoring & Qualification',
+      systemPrompt: `You are a Sales Development agent for Inlight Agency.
+Based on the lead sourcing data, create a qualification framework.
+Define:
+- Lead scoring criteria (firmographics, behavior, engagement signals)
+- Score thresholds (hot, warm, cold)
+- Qualification questions for discovery calls
+- Next-action rules per score tier
+- Follow-up cadence per tier
+
+Output a complete lead management workflow.`,
+    },
+  ],
+}
+
+// ─── Inlight Agency — Content Marketing Engine ──────────────
+
+const INLIGHT_CONTENT_MARKETING: Workflow = {
+  id: 'inlight-content-marketing',
+  name: 'Inlight Content Marketing Engine',
+  description: 'Strategy → Creation → Distribution → Analytics — End-to-end content marketing for Inlight Agency',
+  steps: [
+    {
+      agentType: 'marketing',
+      agentId: null,
+      label: 'Content Strategy',
+      systemPrompt: `You are a Content Marketing strategist for Inlight Agency.
+Create a 30-day content marketing strategy.
+Include:
+- Content pillars and messaging themes
+- Channel mix (LinkedIn, Blog, Twitter, Email, YouTube)
+- Content formats per channel
+- Publishing cadence per channel
+- Promotion and distribution strategy
+- Success metrics and KPIs
+
+Inlight Agency sells an AI-powered operating system for digital agencies.
+Target audience: solo founders and small agency owners.`,
+    },
+    {
+      agentType: 'content',
+      agentId: null,
+      label: 'Content Production',
+      systemPrompt: `You are a Content Producer for Inlight Agency.
+Based on the strategy below, produce the content calendar and write at least 3 full pieces:
+1. One LinkedIn post (educating about AI agency operations)
+2. One blog post introduction (hook + outline)
+3. One email newsletter draft
+
+Follow Inlight's brand voice. Include specific angles that would resonate with solo agency founders.`,
+    },
+    {
+      agentType: 'automation',
+      agentId: null,
+      label: 'Distribution & Analytics',
+      systemPrompt: `You are a Marketing Operations agent for Inlight Agency.
+Based on the content produced, create a distribution plan.
+For each piece of content:
+- Which channel(s) to publish on
+- Best time to publish
+- Cross-promotion plan (share on other channels)
+- Engagement monitoring checklist
+- Performance metrics to track
+
+Also design a weekly reporting template for content marketing KPIs.`,
+    },
+  ],
+}
+
 const WORKFLOWS: Record<string, Workflow> = {
+  // Existing workflows
   'saas-builder': SAAS_BUILDER_WORKFLOW,
   'marketing-strategy': MARKETING_STRATEGY_WORKFLOW,
   'lead-generation': LEAD_GENERATION_WORKFLOW,
   'client-proposal': CLIENT_PROPOSAL_WORKFLOW,
   'seo-strategy': SEO_WORKFLOW,
   'agency-growth': AGENCY_GROWTH_WORKFLOW,
+  // Inlight Agency workflows
+  'inlight-weekly-content': INLIGHT_WEEKLY_CONTENT,
+  'inlight-lead-pipeline': INLIGHT_LEAD_PIPELINE,
+  'inlight-content-marketing': INLIGHT_CONTENT_MARKETING,
 }
 
 const WORKFLOW_MATCHING: Record<string, string> = {
+  // Existing
   'saas': 'saas-builder', 'startup': 'saas-builder', 'business': 'saas-builder',
   'marketing': 'marketing-strategy', 'campaign': 'marketing-strategy',
   'advertising': 'marketing-strategy', 'promotion': 'marketing-strategy',
@@ -224,6 +390,10 @@ const WORKFLOW_MATCHING: Record<string, string> = {
   'proposal': 'client-proposal', 'pitch': 'client-proposal', 'proposals': 'client-proposal',
   'seo': 'seo-strategy', 'search engine': 'seo-strategy', 'ranking': 'seo-strategy', 'keyword': 'seo-strategy',
   'growth': 'agency-growth', 'scale': 'agency-growth', 'expand': 'agency-growth',
+  // Inlight-specific
+  'weekly content': 'inlight-weekly-content', 'content engine': 'inlight-weekly-content',
+  'lead pipeline': 'inlight-lead-pipeline', 'lead gen': 'inlight-lead-pipeline',
+  'content marketing': 'inlight-content-marketing', 'brand': 'inlight-content-marketing',
 }
 
 export function getWorkflow(id: string): Workflow | undefined {

@@ -30,6 +30,24 @@ async function updateDocAction(formData: FormData) {
     ...result.data,
     change_summary: String(rawValues.change_summary || ''),
   })
+
+  // Re-index into Company Brain vector store (non-blocking)
+  try {
+    const { indexKnowledgeDoc } = await import('@/lib/brain/embeddings')
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user?.id) {
+      await indexKnowledgeDoc(supabase, user.id, {
+        id: docId,
+        title: result.data.title || '',
+        content: result.data.content || '',
+        category: result.data.category || 'general',
+        tags: (result.data.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
+      })
+    }
+  } catch (err) {
+    // Non-blocking
+  }
+
   revalidatePath('/dashboard/brain')
   revalidatePath(`/dashboard/brain/${docId}`)
   redirect(`/dashboard/brain/${docId}`)

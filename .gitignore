@@ -17,6 +17,10 @@
 .DS_Store
 *.pem
 .env
+
+# python venv
+.venv
+.venv-*
 .env.local
 .env.development.local
 .env.test.local
@@ -31,6 +35,13 @@ dev.log
 server.log
 tmp_dump.sql
 scripts/session.json
+*.tsbuildinfo
+*.log
+dev-server-log.txt
+build-log.txt
+vercel-log.txt
+vercel-full-log.txt
+temp_excerpt
 
 # IDEs
 .idea

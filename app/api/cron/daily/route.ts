@@ -1,22 +1,23 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { runDailyGrowthExecution } from '@/lib/execution'
+import { AgentRuntime } from '@/lib/agents/runtime'
 
 /**
  * GET /api/cron/daily
  * 
- * Trigger the daily growth execution for all users.
- * Call from an external cron service (cron-job.org, Uptime Robot, etc.) every hour.
+ * Runs every hour via external cron service (cron-job.org, Uptime Robot, etc.):
+ *   1. Daily growth execution for all users (content, leads, reports)
+ *   2. Agent Runtime tick for all users (drains orchestrator queue)
+ *   3. CEO assessment check for all users
  * 
- * The execution is provider-aware — phases that depend on unconnected providers
- * (Gmail, LinkedIn) are skipped with clear log messages.
+ * Auth: Requires CRON_SECRET env var as Bearer token.
  */
 export async function GET(request: Request) {
   const startTime = Date.now()
-  const results: { userId: string; status: string; phases: string; errors: number }[] = []
+  const results: { userId: string; phases: string; tickTasks: number; errors: number }[] = []
 
   try {
-    // Auth check — use service role for cron access
     const authHeader = request.headers.get('authorization')
     const expectedToken = process.env.CRON_SECRET
     if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
@@ -25,7 +26,6 @@ export async function GET(request: Request) {
 
     const supabase = await createClient()
     
-    // Get all active users
     const { data: users } = await supabase
       .from('profiles')
       .select('id')
@@ -41,25 +41,38 @@ export async function GET(request: Request) {
 
     for (const user of users) {
       try {
-        const result = await runDailyGrowthExecution(supabase, user.id)
+        // Phase 1: Daily growth execution (content, LinkedIn, email, leads, report)
+        const dailyResult = await runDailyGrowthExecution(supabase, user.id)
+        
+        // Phase 2: Agent Runtime tick — process pending orchestrator tasks
+        const runtime = new AgentRuntime(supabase, user.id)
+        const tickResult = await runtime.tick({ maxTasks: 10 })
+
+        let tickErrors = 0
+        if (dailyResult.errors) {
+          tickErrors = dailyResult.errors.filter((e: string) => !e.includes('skipped')).length
+        }
+
         results.push({
           userId: user.id,
-          status: result.errors.length > 0 ? 'completed_with_errors' : 'completed',
-          phases: `${result.phaseStatus.content}/${result.phaseStatus.linkedin}/${result.phaseStatus.email}/${result.phaseStatus.leads}/${result.phaseStatus.report}`,
-          errors: result.errors.filter(e => !e.includes('skipped')).length,
+          phases: dailyResult.phaseStatus 
+            ? `${dailyResult.phaseStatus.content}/${dailyResult.phaseStatus.linkedin}/${dailyResult.phaseStatus.email}/${dailyResult.phaseStatus.leads}/${dailyResult.phaseStatus.report}`
+            : 'completed',
+          tickTasks: tickResult.executed + tickResult.approvalHeld,
+          errors: tickErrors,
         })
       } catch (e: any) {
         results.push({
           userId: user.id,
-          status: 'failed',
           phases: 'error',
+          tickTasks: 0,
           errors: 1,
         })
       }
     }
 
     return NextResponse.json({
-      message: `Processed ${users.length} users`,
+      message: `Processed ${users.length} users. ${results.reduce((s, r) => s + r.tickTasks, 0)} runtime tasks executed.`,
       durationMs: Date.now() - startTime,
       results,
     })

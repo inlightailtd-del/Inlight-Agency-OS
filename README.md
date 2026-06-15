@@ -87,25 +87,28 @@ supabase/
 - ✅ Next.js + Supabase setup
 - ✅ Authentication system
 - ✅ App shell & routing
-- → Week 2: CRM (clients, contacts, interactions)
-- → Week 3-4: Project management with tasks
+- ✅ Week 2: CRM (clients, contacts, interactions)
+- ✅ Week 3-4: Project management with tasks
 
 ### Phase 2: Finance Module (Weeks 5-6)
-- Invoices (create, list, PDF)
-- Expense tracking
-- Financial dashboard
+- ✅ Invoices (create, list, view)
+- ✅ Expense tracking
+- ✅ Financial dashboard
 
 ### Phase 3: Company Brain (Weeks 7-9)
-- Vector memory store (pgvector)
-- RAG (Retrieval Augmented Generation)
-- Chat interface
-- Auto-ingestion of business data
+- ✅ Knowledge doc management (CRUD + versioning)
+- ✅ pgvector extension installed
+- ✅ Memory architecture (`agent_memory` table)
+- → Vector search / RAG with AI
 
-### Phase 4: Agents (Weeks 10-12)
-- Project Monitor Agent
-- Invoice Tracker Agent
-- Client Intelligence Agent
-- Agent monitoring dashboard
+### Phase 4: Agent Runtime (Weeks 10-12)
+- ✅ Agent Execution Engine (`lib/agents/runtime.ts`)
+- ✅ Approval gate with autonomy levels (`lib/agents/approval.ts`)
+- ✅ Project Monitor Agent (`lib/agents/project-monitor.ts`)
+- ✅ Orchestrator dashboard with scheduled, manual, and event-driven execution
+- ✅ API endpoints for runtime tick, delegation, and monitoring
+- → Invoice Tracker Agent
+- → Client Intelligence Agent
 
 ## 🔐 Authentication
 

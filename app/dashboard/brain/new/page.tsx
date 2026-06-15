@@ -24,7 +24,32 @@ async function createDocAction(formData: FormData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user?.id) throw new Error('Not authenticated')
-  await createKnowledgeDoc(supabase, user.id, result.data)
+  const newDoc = await createKnowledgeDoc(supabase, user.id, result.data)
+
+  // Auto-index into Company Brain vector store (non-blocking)
+  try {
+    // Fetch the created doc to get its ID
+    const { data: docs } = await supabase
+      .from('knowledge_docs')
+      .select('id, title, content, category, tags')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (docs && docs.length > 0) {
+      const doc = docs[0] as any
+      const { indexKnowledgeDoc } = await import('@/lib/brain/embeddings')
+      await indexKnowledgeDoc(supabase, user.id, {
+        id: doc.id,
+        title: doc.title,
+        content: doc.content || '',
+        category: doc.category || 'general',
+        tags: doc.tags || [],
+      })
+    }
+  } catch (err) {
+    // Indexing is non-blocking — don't fail the creation
+  }
+
   revalidatePath('/dashboard/brain')
   redirect('/dashboard/brain')
 }
