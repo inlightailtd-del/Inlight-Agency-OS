@@ -63,9 +63,11 @@ export async function runDailyGrowthExecution(supabase: SupabaseClient, userId: 
 
   // Check provider connections upfront
   const sdk = new IntegrationSDK(supabase, userId)
-  const [gmailConnected, linkedinConnected] = await Promise.all([
+  const [gmailConnected, linkedinConnected, facebookConnected, instagramConnected] = await Promise.all([
     sdk.getProviderStatus('gmail').then(s => s.connected).catch(() => false),
     sdk.getProviderStatus('linkedin').then(s => s.connected).catch(() => false),
+    sdk.getProviderStatus('facebook').then(s => s.connected).catch(() => false),
+    sdk.getProviderStatus('instagram').then(s => s.connected).catch(() => false),
   ])
 
   // ── Phase 1: Content Generation (always runs) ───────
@@ -77,13 +79,13 @@ export async function runDailyGrowthExecution(supabase: SupabaseClient, userId: 
     errors.push(`Content generation: ${e.message}`)
   }
 
-  // ── Phase 2: LinkedIn Publishing (only if connected) ─
+  // ── Phase 2: Social Publishing (if any social provider connected) ─
   let linkedinPublished = 0
   let facebookPublished = 0
   let instagramPublished = 0
   let xPublished = 0
   let youtubePublished = 0
-  if (linkedinConnected) {
+  if (linkedinConnected || facebookConnected || instagramConnected) {
     try {
       const pubResult = await publishApprovedContent(supabase, userId)
       linkedinPublished = pubResult.linkedin
@@ -97,7 +99,7 @@ export async function runDailyGrowthExecution(supabase: SupabaseClient, userId: 
       errors.push(`Publishing: ${e.message}`)
     }
   } else {
-    errors.push('Publishing: LinkedIn not connected — skipped')
+    errors.push('Publishing: no social providers connected — skipped')
   }
 
   // ── Phase 3: Email Outreach (only if Gmail connected) ─

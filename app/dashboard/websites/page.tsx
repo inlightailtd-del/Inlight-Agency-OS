@@ -66,9 +66,10 @@ export default async function WebsitesPage() {
       </div>
 
       {/* Quality Scores */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard title="Avg SEO Score" value={`${metrics.avgSeoScore}/100`} color={metrics.avgSeoScore >= 80 ? 'text-emerald-600' : metrics.avgSeoScore >= 60 ? 'text-amber-600' : 'text-red-600'} />
         <StatCard title="Avg Performance" value={`${metrics.avgPerformance}/100`} color={metrics.avgPerformance >= 80 ? 'text-emerald-600' : metrics.avgPerformance >= 60 ? 'text-amber-600' : 'text-red-600'} />
+        <StatCard title="Auto Deploys" value={metrics.autoDeploys} color="text-cyan-600" />
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Web Team</p>
           <div className="flex flex-wrap gap-1 mt-2">
@@ -77,6 +78,20 @@ export default async function WebsitesPage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Website Factory Capabilities */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <StatCard title="Wireframes" value={metrics.wireframesGenerated} color="text-amber-600" />
+        <StatCard title="Design Systems" value={metrics.designSystemsCreated} color="text-purple-600" />
+        <StatCard title="Themes" value={metrics.themesGenerated} color="text-pink-600" />
+        <StatCard title="Landing Pages" value={metrics.landingPagesBuilt} color="text-indigo-600" />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <StatCard title="SEO Audits" value={metrics.seoAuditsRun} color="text-emerald-600" />
+        <StatCard title="Lighthouse Audits" value={metrics.lighthouseAuditsRun} color="text-sky-600" />
+        <StatCard title="Templates" value={metrics.totalTemplates} color="text-slate-600" />
+        <StatCard title="Deployments" value={metrics.totalDeployments} color="text-cyan-600" />
       </div>
 
       {/* Pipeline Kanban */}

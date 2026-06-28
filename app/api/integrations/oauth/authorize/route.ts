@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const provider = searchParams.get('provider')
 
-    const validProviders = ['gmail', 'linkedin', 'facebook', 'calendly']
+    const validProviders = ['gmail', 'linkedin', 'facebook', 'calendly', 'youtube']
     if (!provider || !validProviders.includes(provider)) {
       return NextResponse.json({ error: `Invalid provider. Must be one of: ${validProviders.join(', ')}` }, { status: 400 })
     }

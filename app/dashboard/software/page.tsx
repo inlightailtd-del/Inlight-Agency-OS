@@ -70,9 +70,10 @@ export default async function SoftwarePage() {
       </div>
 
       {/* Quality Row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <StatCard title="Avg Test Coverage" value={`${metrics.avgTestCoverage}%`} color={metrics.avgTestCoverage >= 70 ? 'text-emerald-600' : metrics.avgTestCoverage >= 40 ? 'text-amber-600' : 'text-red-600'} />
         <StatCard title="Avg Deployments" value={metrics.avgDeployCount} />
+        <StatCard title="Total Test Suites" value={metrics.totalTestSuites} color="text-rose-600" />
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Engineering Team</p>
           <div className="flex flex-wrap gap-1 mt-2">
@@ -81,6 +82,22 @@ export default async function SoftwarePage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Software Factory Capabilities */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <StatCard title="SaaS Blueprints" value={metrics.saasBlueprints} color="text-blue-600" />
+        <StatCard title="Boilerplates" value={metrics.boilerplatesScaffolded} color="text-indigo-600" />
+        <StatCard title="CI/CD Pipelines" value={metrics.cicdPipelines} color="text-amber-600" />
+        <StatCard title="Docker Configs" value={metrics.dockerConfigs} color="text-cyan-600" />
+        <StatCard title="K8s Templates" value={metrics.k8sTemplates} color="text-purple-600" />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <StatCard title="GitHub Actions" value={metrics.githubActions} color="text-slate-600" />
+        <StatCard title="Vercel Deploys" value={metrics.vercelDeploys} color="text-emerald-600" />
+        <StatCard title="Cloudflare Deploys" value={metrics.cloudflareDeploys} color="text-orange-600" />
+        <StatCard title="Rollbacks" value={metrics.rollbacks} color={metrics.rollbacks > 0 ? 'text-rose-600' : 'text-slate-400'} />
+        <StatCard title="Auto Tests Run" value={metrics.autoTestsRun} color="text-violet-600" />
       </div>
 
       {/* Pipeline Kanban */}

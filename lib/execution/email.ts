@@ -20,11 +20,12 @@ export async function sendOutreachEmails(supabase: SupabaseClient, userId: strin
   let failed = 0
 
   // Check which email providers are connected
-  const [gmailStatus, outlookStatus] = await Promise.all([
+  const [gmailStatus, outlookStatus, resendStatus] = await Promise.all([
     sdk.getProviderStatus('gmail'),
     sdk.getProviderStatus('outlook'),
+    sdk.getProviderStatus('resend'),
   ])
-  const emailProvider = gmailStatus.connected ? 'gmail' : outlookStatus.connected ? 'outlook' : null
+  const emailProvider = gmailStatus.connected ? 'gmail' : outlookStatus.connected ? 'outlook' : resendStatus.connected ? 'resend' : null
   if (!emailProvider) return { sent: 0, failed: 0, errors: ['No email provider connected'], recipients: [] }
 
   // Load uncontacted leads

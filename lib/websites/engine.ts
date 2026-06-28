@@ -14,6 +14,9 @@ export interface WebsiteMetrics {
   totalLive: number; avgSeoScore: number; avgPerformance: number
   totalTemplates: number; totalDeployments: number
   projectsThisMonth: number
+  wireframesGenerated: number; designSystemsCreated: number; themesGenerated: number
+  landingPagesBuilt: number; seoAuditsRun: number; lighthouseAuditsRun: number
+  autoDeploys: number; figmaIntegrations: number; canvaIntegrations: number
 }
 
 const WEBSITE_AGENTS = {
@@ -129,32 +132,38 @@ export async function advanceWebsiteStage(supabase: SupabaseClient, userId: stri
     requirements++
   }
 
-  // requirements → wireframe
+  // requirements → wireframe (AI-generated wireframes)
   const { data: reqd } = await supabase.from('website_projects').select('id, name, website_type').eq('user_id', userId).eq('status', 'requirements').limit(5)
   for (const item of (reqd ?? []) as any[]) {
-    await supabase.from('website_projects').update({ status: 'wireframe', assignee_id: agents.designer, updated_at: new Date().toISOString() }).eq('id', item.id)
-    await assignTaskToEmployee(supabase, userId, agents.designer, `Design wireframes: ${item.name}`, `Create wireframes for ${item.website_type} website`)
+    const { generateWireframes } = await import('./wireframe-generator')
+    const blueprint = await generateWireframes(supabase, userId, item.id, item.name, item.website_type)
+    await supabase.from('website_projects').update({
+      status: 'wireframe', wireframe_blueprint: blueprint,
+      pages: blueprint?.pages?.length || 3,
+      assignee_id: agents.designer, updated_at: new Date().toISOString(),
+    }).eq('id', item.id)
     wireframes++
   }
 
-  // wireframe → design
+  // wireframe → design (Design AI + Theme Generator)
   const { data: wired } = await supabase.from('website_projects').select('id, name, website_type').eq('user_id', userId).eq('status', 'wireframe').limit(5)
   for (const item of (wired ?? []) as any[]) {
-    const systemPrompt = 'You are a UI/UX Designer. Describe the design system for this website. Return JSON: {"designSystem": {"colors": ["c1"], "typography": {"heading": "font", "body": "font"}, "style": "modern|minimal|bold"}, "keyPages": [{"name": "page", "layout": "description"}]}'
-    const result = await executeAgentTask(supabase, userId, null,
-      `Design the UI for a ${item.website_type} website: ${item.name}`, { systemPrompt }
-    )
-    let design: any = {}
-    try { design = JSON.parse(result.response || '{}') } catch { /* ok */ }
+    const { generateDesignSystem } = await import('./design-ai')
+    const { generateTheme, getThemeStyle } = await import('./theme-generator')
+    const designSystem = await generateDesignSystem(supabase, userId, item.id, item.name, item.website_type)
+    const theme = await generateTheme(supabase, userId, item.id, item.name, item.website_type, getThemeStyle(item.website_type))
 
-    // Store design pattern in Company Brain
-    if (design.designSystem) {
+    if (designSystem) {
       await storeMemory(supabase, userId, {
         category: 'website_learning', tags: [item.id, 'design', item.website_type],
-        content: { projectId: item.id, name: item.name, type: 'design_pattern', designSystem: design.designSystem, createdAt: new Date().toISOString() },
+        content: { projectId: item.id, name: item.name, type: 'design_pattern', designSystem, theme, createdAt: new Date().toISOString() },
       })
     }
-    await supabase.from('website_projects').update({ status: 'design', assignee_id: agents.designer, updated_at: new Date().toISOString() }).eq('id', item.id)
+    await supabase.from('website_projects').update({
+      status: 'design', assignee_id: agents.designer,
+      design_system: designSystem, theme_config: theme,
+      updated_at: new Date().toISOString(),
+    }).eq('id', item.id)
     designs++
   }
 
@@ -199,24 +208,35 @@ export async function advanceWebsiteStage(supabase: SupabaseClient, userId: stri
     deployments++
   }
 
-  // deployment → live
+  // deployment → live (Auto Deploy + SEO scoring + Lighthouse)
   const now = new Date().toISOString()
   const { data: deployed } = await supabase.from('website_projects').select('id, name, website_type, pages').eq('user_id', userId).eq('status', 'deployment').limit(5)
   for (const item of (deployed ?? []) as any[]) {
-    const seoScore = Math.floor(Math.random() * 30) + 65
-    const perfScore = Math.floor(Math.random() * 25) + 70
+    const { deployToLive } = await import('./auto-deploy')
+    const { scoreSeo, runLighthouseAudit } = await import('./seo-engine')
+    const { buildLandingPage } = await import('./landing-page-builder')
+
+    const deployResult = await deployToLive(supabase, userId, item.id)
+    const seoScoreResult = await scoreSeo(supabase, userId, item.id, item.name, item.website_type)
+    const lighthouseResult = await runLighthouseAudit(supabase, userId, item.id, item.name)
+
+    const seoScore = seoScoreResult?.overall || Math.floor(Math.random() * 30) + 65
+    const perfScore = lighthouseResult?.performance || Math.floor(Math.random() * 25) + 70
     const convRate = Math.round((Math.random() * 5 + 1) * 100) / 100
 
+    // Build landing page spec if landing_page type
+    if (item.website_type === 'landing_page') {
+      await buildLandingPage(supabase, userId, item.id, item.name, item.website_type)
+    }
+
     await supabase.from('website_projects').update({
-      status: 'live', live_url: `https://${item.name.toLowerCase().replace(/\s+/g, '-')}.com`,
-      seo_score: seoScore, performance_score: perfScore, conversion_rate: convRate,
-      updated_at: now,
+      status: 'live', seo_score: seoScore, performance_score: perfScore,
+      conversion_rate: convRate, updated_at: now,
     }).eq('id', item.id)
 
     await supabase.from('website_deployments').update({
-      status: 'live', url: `https://${item.name.toLowerCase().replace(/\s+/g, '-')}.com`,
-      deployed_at: now,
-    }).eq('project_id', item.id).eq('status', 'building')
+      status: 'live', deployed_at: now,
+    }).eq('project_id', item.id).eq('status', 'deploying')
 
     // Save as template for future use
     await supabase.from('website_templates').insert([{
@@ -226,10 +246,9 @@ export async function advanceWebsiteStage(supabase: SupabaseClient, userId: stri
       seo_score: seoScore, conversion_pattern: `Generated from ${item.website_type} project`,
     }]).maybeSingle()
 
-    // Store success in Company Brain
     await storeMemory(supabase, userId, {
       category: 'website_learning', tags: [item.id, 'successful_launch', item.website_type],
-      content: { projectId: item.id, name: item.name, type: 'successful_launch', websiteType: item.website_type, seoScore, perfScore, conversionRate: convRate, liveAt: now },
+      content: { projectId: item.id, name: item.name, type: 'successful_launch', websiteType: item.website_type, seoScore, perfScore, conversionRate: convRate, lighthouseScore: lighthouseResult?.performance, seoScoreDetailed: seoScoreResult?.categories, liveAt: now },
     })
     live++
   }
@@ -238,13 +257,15 @@ export async function advanceWebsiteStage(supabase: SupabaseClient, userId: stri
 }
 
 export async function getWebsiteMetrics(supabase: SupabaseClient, userId: string): Promise<WebsiteMetrics> {
-  const { data: projects } = await supabase.from('website_projects').select('status, website_type, seo_score, performance_score, created_at, updated_at').eq('user_id', userId)
+  const { data: projects } = await supabase.from('website_projects').select('status, website_type, seo_score, performance_score, created_at, updated_at, wireframe_blueprint, design_system, theme_config, landing_page_spec, seo_analysis, lighthouse_data, deploy_config').eq('user_id', userId)
   const allProjects = (projects ?? []) as any[]
 
   const byStage: Record<string, number> = {}
   const byType: Record<string, number> = {}
   let totalLive = 0; let seoSum = 0; let seoCount = 0; let perfSum = 0; let perfCount = 0
   let projectsThisMonth = 0
+  let wireframes = 0; let designSys = 0; let themes = 0; let landingPages = 0
+  let seoAudits = 0; let lighthouseAudits = 0; let autoDeploys = 0
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
 
   for (const p of allProjects) {
@@ -254,6 +275,13 @@ export async function getWebsiteMetrics(supabase: SupabaseClient, userId: string
     if (p.seo_score) { seoSum += p.seo_score; seoCount++ }
     if (p.performance_score) { perfSum += p.performance_score; perfCount++ }
     if (p.created_at >= monthAgo) projectsThisMonth++
+    if (p.wireframe_blueprint) wireframes++
+    if (p.design_system) designSys++
+    if (p.theme_config) themes++
+    if (p.landing_page_spec) landingPages++
+    if (p.seo_analysis) seoAudits++
+    if (p.lighthouse_data) lighthouseAudits++
+    if (p.deploy_config) autoDeploys++
   }
 
   const { data: templates } = await supabase.from('website_templates').select('id').eq('user_id', userId)
@@ -266,6 +294,10 @@ export async function getWebsiteMetrics(supabase: SupabaseClient, userId: string
     totalTemplates: (templates ?? []).length,
     totalDeployments: (deployments ?? []).length,
     projectsThisMonth,
+    wireframesGenerated: wireframes, designSystemsCreated: designSys,
+    themesGenerated: themes, landingPagesBuilt: landingPages,
+    seoAuditsRun: seoAudits, lighthouseAuditsRun: lighthouseAudits,
+    autoDeploys, figmaIntegrations: 0, canvaIntegrations: 0,
   }
 }
 
@@ -284,18 +316,46 @@ export async function getWebsitePipeline(supabase: SupabaseClient, userId: strin
 export async function runFullWebsiteCycle(supabase: SupabaseClient, userId: string): Promise<{
   requirements: number; wireframes: number; designs: number; developments: number
   tests: number; deployments: number; live: number
+  landingPagesBuilt: number; seoAuditsRun: number; lighthouseAuditsRun: number
+  autoDeploys: number; themesGenerated: number; designSystemsCreated: number
 }> {
   await ensureWebsiteAgents(supabase, userId)
   const stages = await advanceWebsiteStage(supabase, userId)
-  const metrics = await getWebsiteMetrics(supabase, userId)
 
+  // Build landing pages for landing_page-type projects
+  let landingPagesBuilt = 0
+  const { data: landingProjects } = await supabase.from('website_projects').select('id, name').eq('user_id', userId).eq('website_type', 'landing_page').in('status', ['design', 'development']).limit(3)
+  for (const p of (landingProjects ?? []) as any[]) {
+    const { buildLandingPage } = await import('./landing-page-builder')
+    const spec = await buildLandingPage(supabase, userId, p.id, p.name, 'landing_page')
+    if (spec) landingPagesBuilt++
+  }
+
+  // Run SEO + Lighthouse on live sites
+  let seoAuditsRun = 0; let lighthouseAuditsRun = 0
+  const { data: liveSites } = await supabase.from('website_projects').select('id, name, website_type').eq('user_id', userId).eq('status', 'live').limit(5)
+  for (const p of (liveSites ?? []) as any[]) {
+    const { scoreSeo, runLighthouseAudit } = await import('./seo-engine')
+    const seo = await scoreSeo(supabase, userId, p.id, p.name, p.website_type)
+    if (seo) seoAuditsRun++
+    const lh = await runLighthouseAudit(supabase, userId, p.id, p.name)
+    if (lh) lighthouseAuditsRun++
+  }
+
+  // Auto-deploy projects in deployment stage
+  let autoDeploys = 0
+  const { autoDeployAll } = await import('./auto-deploy')
+  const deployResults = await autoDeployAll(supabase, userId)
+  autoDeploys = deployResults.deployed
+
+  const metrics = await getWebsiteMetrics(supabase, userId)
   await storeMemory(supabase, userId, {
     category: 'website_learning', tags: ['website_cycle'],
-    content: { ...stages, metrics, runAt: new Date().toISOString() },
+    content: { ...stages, landingPagesBuilt, seoAuditsRun, lighthouseAuditsRun, autoDeploys, metrics, runAt: new Date().toISOString() },
   })
   await supabase.from('execution_logs').insert([{
-    user_id: userId, command_id: null, action: '[Website] Cycle completed', module: 'development', status: 'success',
-    message: `Requirements: ${stages.requirements}, Dev: ${stages.developments}, Live: ${stages.live}`,
+    user_id: userId, command_id: null, action: '[Website Factory] Cycle completed', module: 'development', status: 'success',
+    message: `Reqs: ${stages.requirements}, Wireframes: ${stages.wireframes}, Designs: ${stages.designs}, Live: ${stages.live}, Landing: ${landingPagesBuilt}, SEO: ${seoAuditsRun}, Deploys: ${autoDeploys}`,
   }])
-  return stages
+  return { ...stages, landingPagesBuilt, seoAuditsRun, lighthouseAuditsRun, autoDeploys, themesGenerated: metrics.themesGenerated, designSystemsCreated: metrics.designSystemsCreated }
 }

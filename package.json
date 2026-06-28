@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "supabase:push": "supabase push",
     "supabase:pull": "supabase pull"

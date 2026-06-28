@@ -25,6 +25,10 @@ import { checkAutonomy } from './approval'
 import type { AutonomyCheckResult } from './approval'
 import type { AgentRow } from '@/lib/supabase/agents'
 import type { OrchTaskWithAgent } from '@/lib/supabase/orchestrator'
+import { SwarmEngine } from '@/lib/swarm/engine'
+import type { SwarmConfig, SwarmRound, SwarmParticipant } from '@/lib/swarm/types'
+import { GrowthEngine } from '@/lib/growth/engine'
+import type { GrowthEngineRun } from '@/lib/growth/types'
 
 // ─── Execution Modes ─────────────────────────────────────────
 
@@ -339,6 +343,63 @@ export class AgentRuntime {
       totalTokens,
       status: completed ? 'completed' : 'partial',
     }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  //  SWARM INTELLIGENCE
+  // ════════════════════════════════════════════════════════════
+
+  /**
+   * Create a SwarmEngine instance bound to this runtime's Supabase client and user.
+   */
+  initSwarm(config?: SwarmConfig): SwarmEngine {
+    return new SwarmEngine(this.supabase, this.userId, config)
+  }
+
+  /**
+   * Run a full swarm cycle: init round → negotiate → resolve conflicts → consensus → execute.
+   * Convenience wrapper around SwarmEngine.runCycle().
+   */
+  async runSwarmCycle(params: {
+    objective: string
+    department?: string
+    agents: { agentId: string; role: SwarmParticipant['role']; department?: string }[]
+    collaborationId?: string
+    config?: SwarmConfig
+  }): Promise<{
+    round: SwarmRound
+    status: string
+    tasksProcessed: number
+    conflictsResolved: number
+    consensusReached: boolean
+  }> {
+    const engine = this.initSwarm(params.config)
+    const round = await engine.initRound({
+      objective: params.objective,
+      department: params.department,
+      agentIds: params.agents,
+    })
+    return engine.runCycle(round.id, params.collaborationId)
+  }
+
+  // ════════════════════════════════════════════════════════════
+  //  GROWTH ENGINE
+  // ════════════════════════════════════════════════════════════
+
+  /**
+   * Create a GrowthEngine instance bound to this runtime's Supabase client and user.
+   */
+  initGrowth(): GrowthEngine {
+    return new GrowthEngine(this.supabase, this.userId)
+  }
+
+  /**
+   * Run a full growth engine cycle: market scan → competitor scrape → pricing →
+   * opportunity detection → revenue simulation → offer generation.
+   */
+  async runGrowthCycle(industry?: string): Promise<GrowthEngineRun> {
+    const engine = this.initGrowth()
+    return engine.runFullCycle(industry)
   }
 
   // ════════════════════════════════════════════════════════════

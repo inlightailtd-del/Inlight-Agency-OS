@@ -1,6 +1,163 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { executeAgentTask } from '@/lib/ai/execution'
 import { storeMemory } from '@/lib/ai/memory'
+import { CompetitorScraper } from './competitor-scraper'
+import { MarketScanner } from './market-scanner'
+import { PricingEngine } from './pricing-engine'
+import { OfferGenerator } from './offer-generator'
+import { RevenueSimulator } from './revenue-simulator'
+import { OpportunityDetector } from './opportunity-detector'
+import type { GrowthEngineRun, MarketScan } from './types'
+import { BaseGrowthModule } from './types'
+
+export * from './types'
+export { CompetitorScraper } from './competitor-scraper'
+export { MarketScanner } from './market-scanner'
+export { PricingEngine } from './pricing-engine'
+export { OfferGenerator } from './offer-generator'
+export { RevenueSimulator } from './revenue-simulator'
+export { OpportunityDetector } from './opportunity-detector'
+
+export class GrowthEngine extends BaseGrowthModule {
+  competitor: CompetitorScraper
+  market: MarketScanner
+  pricing: PricingEngine
+  offers: OfferGenerator
+  revenue: RevenueSimulator
+  opportunities: OpportunityDetector
+
+  constructor(supabase: SupabaseClient, userId: string) {
+    super(supabase, userId)
+    this.competitor = new CompetitorScraper(supabase, userId)
+    this.market = new MarketScanner(supabase, userId)
+    this.pricing = new PricingEngine(supabase, userId)
+    this.offers = new OfferGenerator(supabase, userId)
+    this.revenue = new RevenueSimulator(supabase, userId)
+    this.opportunities = new OpportunityDetector(supabase, userId)
+  }
+
+  async runFullCycle(industry?: string): Promise<GrowthEngineRun> {
+    const startTime = Date.now()
+    const phasesCompleted: string[] = []
+    const errors: string[] = []
+
+    const { data: run } = await this.supabase.from('growth_engine_runs').insert([{
+      user_id: this.userId,
+      status: 'running',
+    }]).select('*').single()
+
+    const runId = (run as any)?.id
+    let marketScan: MarketScan | null = null
+
+    // Phase 1: Market Scan
+    try {
+      marketScan = await this.market.scan(industry)
+      phasesCompleted.push('market_scan')
+    } catch (e: any) { errors.push(`Market Scan: ${e.message}`) }
+
+    // Phase 2: Competitor Scrape
+    let competitorsScraped = 0
+    try {
+      const results = await this.competitor.scrapeAll()
+      competitorsScraped = results.length
+      phasesCompleted.push('competitor_scrape')
+    } catch (e: any) { errors.push(`Competitor Scrape: ${e.message}`) }
+
+    // Phase 3: Pricing Model
+    let pricingGenerated = false
+    try {
+      await this.pricing.generate({
+        name: `Growth Pricing — ${new Date().toLocaleDateString()}`,
+        strategy: 'value_based',
+      })
+      pricingGenerated = true
+      phasesCompleted.push('pricing')
+    } catch (e: any) { errors.push(`Pricing: ${e.message}`) }
+
+    // Phase 4: Opportunity Detection
+    let opportunitiesFound = 0
+    try {
+      const opps = await this.opportunities.detect(industry ?? 'general', marketScan ?? undefined)
+      opportunitiesFound = opps.length
+      phasesCompleted.push('opportunities')
+    } catch (e: any) { errors.push(`Opportunities: ${e.message}`) }
+
+    // Phase 5: Revenue Simulation
+    let simulationsRun = 0
+    try {
+      await this.revenue.simulate({ name: `Growth Cycle — ${new Date().toLocaleDateString()}` })
+      simulationsRun++
+      phasesCompleted.push('revenue')
+    } catch (e: any) { errors.push(`Revenue: ${e.message}`) }
+
+    // Phase 6: Offer Generation
+    let offersGenerated = 0
+    try {
+      const offers = await this.offers.generate(industry ?? 'general', marketScan ?? undefined)
+      offersGenerated = offers.length
+      phasesCompleted.push('offers')
+    } catch (e: any) { errors.push(`Offers: ${e.message}`) }
+
+    const duration = Date.now() - startTime
+    const status = errors.length > 0 ? 'failed' : 'completed'
+
+    const summary = [
+      `Market: ${phasesCompleted.includes('market_scan') ? 'OK' : 'FAIL'}`,
+      `Competitors: ${competitorsScraped}`,
+      `Pricing: ${pricingGenerated ? 'OK' : 'FAIL'}`,
+      `Opportunities: ${opportunitiesFound}`,
+      `Revenue Sims: ${simulationsRun}`,
+      `Offers: ${offersGenerated}`,
+      `${(duration / 1000).toFixed(1)}s`,
+      errors.length > 0 ? `Errors: ${errors.join('; ')}` : '',
+    ].filter(Boolean).join(' | ')
+
+    if (runId) {
+      await this.supabase.from('growth_engine_runs').update({
+        status,
+        phases_completed: JSON.stringify(phasesCompleted),
+        competitors_scraped: competitorsScraped,
+        trends_detected: marketScan?.trends_found ?? 0,
+        pricing_generated: pricingGenerated,
+        offers_generated: offersGenerated,
+        simulations_run: simulationsRun,
+        opportunities_found: opportunitiesFound,
+        errors: JSON.stringify(errors),
+        summary,
+        completed_at: new Date().toISOString(),
+      }).eq('id', runId)
+    }
+
+    await this.storeBrain('growth_cycle', {
+      industry,
+      phasesCompleted,
+      competitorsScraped,
+      pricingGenerated,
+      opportunitiesFound,
+      offersGenerated,
+      duration,
+      summary,
+    }, ['growth_cycle', 'full'])
+
+    await this.log('growth_cycle_completed', summary, status === 'completed' ? 'success' : 'failed')
+
+    return {
+      id: runId ?? '',
+      status: status as 'completed' | 'failed' | 'running',
+      phases_completed: phasesCompleted,
+      competitors_scraped: competitorsScraped,
+      trends_detected: marketScan?.trends_found ?? 0,
+      pricing_generated: pricingGenerated,
+      offers_generated: offersGenerated,
+      simulations_run: simulationsRun,
+      opportunities_found: opportunitiesFound,
+      errors,
+      summary,
+      started_at: new Date(startTime).toISOString(),
+      completed_at: new Date().toISOString(),
+    }
+  }
+}
 
 export interface GrowthMetrics {
   scheduledCount: number

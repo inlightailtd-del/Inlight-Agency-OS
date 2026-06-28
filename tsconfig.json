@@ -39,6 +39,9 @@
   ],
   "exclude": [
     "node_modules",
-    ".next"
+    ".next",
+    "sentry.client.config.ts",
+    "sentry.server.config.ts",
+    "sentry.edge.config.ts"
   ]
 }

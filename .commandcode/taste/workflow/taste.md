@@ -6,7 +6,7 @@
 - Prefer targeted edits (insert/update specific lines or sections) over rewriting entire files when only small changes are needed. Confidence: 0.70
 - Before fixing a migration ordering bug, verify and prove that the bug actually exists by showing the exact failure mechanism and affected statements. Confidence: 0.65
 - Before calling server-side logic (e.g., executeCommand) from a client component, verify security implications (API key exposure, server vs. client boundaries) and recommend the safest architecture (server action vs. API route vs. direct call). Confidence: 0.65
-- Prefer reusing existing infrastructure (tables, functions, types) over creating new ones; keep each implementation MVP and minimal by building on what already exists. Confidence: 0.60
+- Prefer reusing existing infrastructure (tables, functions, types, provider architecture) over creating new ones; keep each implementation MVP and minimal by building on what already exists. Do not create duplicate systems when existing infrastructure can be extended. Confidence: 0.72
 - After completing each feature, generate a Git commit message summarizing what was changed. Confidence: 0.70
 - After completing each feature, list all modified files in a table with their action (created/edited) and purpose. Confidence: 0.70
 - After completing each feature, summarize the architecture changes made. Confidence: 0.70

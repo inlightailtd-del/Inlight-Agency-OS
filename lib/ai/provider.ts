@@ -18,7 +18,7 @@ export interface AIResponse {
 }
 
 export interface AIProviderConfig {
-  provider: 'ollama' | 'openai' | 'anthropic' | 'groq'
+  provider: 'ollama' | 'openai' | 'anthropic' | 'groq' | 'openrouter'
   model: string
   api_url?: string
   api_key?: string
@@ -48,6 +48,8 @@ export async function generateAIResponse(
         return await callAnthropic(merged, messages, startTime)
       case 'groq':
         return await callGroq(merged, messages, startTime)
+      case 'openrouter':
+        return await callOpenRouter(merged, messages, startTime)
       default:
         throw new Error(`Unsupported provider: ${merged.provider}`)
     }
@@ -137,6 +139,36 @@ async function callAnthropic(
     model: config.model,
     provider: 'anthropic',
     tokens_used: data.usage?.input_tokens + (data.usage?.output_tokens || 0),
+    duration_ms: Date.now() - startTime,
+  }
+}
+
+async function callOpenRouter(
+  config: AIProviderConfig,
+  messages: AIMessage[],
+  startTime: number
+): Promise<AIResponse> {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.api_key}`,
+      'HTTP-Referer': 'https://inlight.agency',
+      'X-Title': 'Inlight Agency OS',
+    },
+    body: JSON.stringify({ model: config.model || 'google/gemini-2.0-flash-lite-preview-02-05:free', messages }),
+    signal: AbortSignal.timeout(60000),
+  })
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '')
+    throw new Error(`OpenRouter error: ${response.status} ${errBody.substring(0, 200)}`)
+  }
+  const data = await response.json()
+  return {
+    content: data.choices?.[0]?.message?.content || '',
+    model: config.model,
+    provider: 'openrouter',
+    tokens_used: data.usage?.total_tokens || 0,
     duration_ms: Date.now() - startTime,
   }
 }

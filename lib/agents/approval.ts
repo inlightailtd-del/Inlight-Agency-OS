@@ -228,7 +228,7 @@ export async function fetchPendingApprovals(
 ): Promise<any[]> {
   const { data, error } = await supabase
     .from('agent_approval_requests')
-    .select('*, agents!agent_approval_requests_agent_id_fkey(name, type)')
+    .select('*, agents!agent_approval_requests_agent_id_fkey:agent_id(name, type)')
     .eq('user_id', userId)
     .eq('status', 'pending')
     .order('created_at', { ascending: false })

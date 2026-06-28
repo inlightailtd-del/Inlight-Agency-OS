@@ -13,6 +13,19 @@ export const RATE_LIMITS: Record<string, { windowSec: number; max: number }> = {
   elevenlabs: { windowSec: 60, max: 30 }, openai_realtime: { windowSec: 60, max: 100 },
   facebook: { windowSec: 60, max: 100 }, instagram: { windowSec: 60, max: 100 },
   x: { windowSec: 60, max: 100 }, youtube: { windowSec: 60, max: 100 },
+  runway: { windowSec: 60, max: 10 }, veo: { windowSec: 60, max: 10 },
+  pika: { windowSec: 60, max: 10 }, kling: { windowSec: 60, max: 10 },
+  whisper: { windowSec: 60, max: 50 },
+  whatsapp: { windowSec: 60, max: 250 },
+  facebook_ads: { windowSec: 60, max: 30 }, google_ads: { windowSec: 60, max: 50 },
+  linkedin_ads: { windowSec: 60, max: 30 }, tiktok_ads: { windowSec: 60, max: 40 },
+  github: { windowSec: 60, max: 60 }, gitlab: { windowSec: 60, max: 60 },
+  vercel: { windowSec: 60, max: 30 }, cloudflare: { windowSec: 60, max: 30 },
+  figma: { windowSec: 60, max: 30 }, canva: { windowSec: 60, max: 30 },
+  salesforce: { windowSec: 60, max: 100 }, slack: { windowSec: 60, max: 100 },
+  discord: { windowSec: 60, max: 50 }, telegram: { windowSec: 60, max: 30 },
+  airtable: { windowSec: 60, max: 10 }, n8n: { windowSec: 60, max: 60 },
+  make: { windowSec: 60, max: 30 },
 }
 
 export class BaseProvider {

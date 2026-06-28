@@ -13,6 +13,10 @@ export interface SwMetrics {
   total: number; byStage: Record<string, number>; byType: Record<string, number>
   totalDeployed: number; totalRepos: number; totalApis: number; totalTestSuites: number
   avgTestCoverage: number; avgDeployCount: number; projectsThisMonth: number
+  saasBlueprints: number; boilerplatesScaffolded: number
+  cicdPipelines: number; dockerConfigs: number; k8sTemplates: number
+  vercelDeploys: number; cloudflareDeploys: number; rollbacks: number
+  githubActions: number; autoTestsRun: number
 }
 
 const SW_AGENTS = {
@@ -258,10 +262,11 @@ export async function advanceSwStage(supabase: SupabaseClient, userId: string): 
 }
 
 export async function getSwMetrics(supabase: SupabaseClient, userId: string): Promise<SwMetrics> {
-  const { data: projects } = await supabase.from('software_projects').select('status, project_type, test_coverage, deploy_count, created_at').eq('user_id', userId)
+  const { data: projects } = await supabase.from('software_projects').select('status, project_type, test_coverage, deploy_count, created_at, saas_blueprint, boilerplate_type, cicd_config, docker_config, k8s_config, test_framework, repo_config').eq('user_id', userId)
   const allProjects = (projects ?? []) as any[]
   const byStage: Record<string, number> = {}; const byType: Record<string, number> = {}
   let totalDeployed = 0; let covSum = 0; let covCount = 0; let depSum = 0; let depCount = 0; let pm = 0
+  let saasBps = 0; let boilerplates = 0; let cicds = 0; let dockers = 0; let k8s = 0; let ga = 0; let autoTests = 0
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
   for (const p of allProjects) {
     byStage[p.status] = (byStage[p.status] || 0) + 1
@@ -270,10 +275,19 @@ export async function getSwMetrics(supabase: SupabaseClient, userId: string): Pr
     if (p.test_coverage) { covSum += p.test_coverage; covCount++ }
     if (p.deploy_count) { depSum += p.deploy_count; depCount++ }
     if (p.created_at >= monthAgo) pm++
+    if (p.saas_blueprint && Object.keys(p.saas_blueprint).length > 0) saasBps++
+    if (p.boilerplate_type) boilerplates++
+    if (p.cicd_config && Object.keys(p.cicd_config).length > 0) cicds++
+    if (p.docker_config && Object.keys(p.docker_config).length > 0) dockers++
+    if (p.k8s_config && Object.keys(p.k8s_config).length > 0) k8s++
+    if (p.test_framework) autoTests++
+    if (p.repo_config?.branches?.length > 1 || (p.repo_config as any)?.workflows?.length > 0) ga++
   }
   const { data: repos } = await supabase.from('code_repositories').select('id').eq('user_id', userId)
   const { data: apis } = await supabase.from('api_services').select('id').eq('user_id', userId)
   const { data: tests } = await supabase.from('test_suites').select('id').eq('user_id', userId)
+  const { data: deploys } = await supabase.from('deployments_sw').select('platform, status').eq('user_id', userId)
+  const allDeploys = (deploys ?? []) as any[]
   return {
     total: allProjects.length, byStage, byType, totalDeployed,
     totalRepos: (repos ?? []).length, totalApis: (apis ?? []).length,
@@ -281,6 +295,12 @@ export async function getSwMetrics(supabase: SupabaseClient, userId: string): Pr
     avgTestCoverage: covCount > 0 ? Math.round(covSum / covCount) : 0,
     avgDeployCount: depCount > 0 ? Math.round(depSum / depCount) : 0,
     projectsThisMonth: pm,
+    saasBlueprints: saasBps, boilerplatesScaffolded: boilerplates,
+    cicdPipelines: cicds, dockerConfigs: dockers, k8sTemplates: k8s,
+    vercelDeploys: allDeploys.filter(d => d.platform === 'vercel' && d.status === 'live').length,
+    cloudflareDeploys: allDeploys.filter(d => d.platform === 'cloudflare' && d.status === 'live').length,
+    rollbacks: allDeploys.filter(d => d.status === 'rolled_back').length,
+    githubActions: ga, autoTestsRun: autoTests,
   }
 }
 
@@ -297,6 +317,10 @@ export async function runFullSoftwareCycle(supabase: SupabaseClient, userId: str
   requirements: number; architected: number; planned: number
   frontendWork: number; backendWork: number; integrated: number
   tested: number; deployed: number; maintenance: number
+  saasGenerated: number; boilerplatesScaffolded: number; reposCreated: number
+  githubActionsCreated: number; cicdPipelinesBuilt: number; dockerConfigsBuilt: number
+  k8sTemplatesGenerated: number; vercelDeploys: number; cloudflareDeploys: number
+  rollbacksExecuted: number; testSuitesGenerated: number
 }> {
   await ensureSoftwareAgents(supabase, userId)
 
@@ -319,14 +343,102 @@ export async function runFullSoftwareCycle(supabase: SupabaseClient, userId: str
   } catch { /* ok */ }
 
   const stages = await advanceSwStage(supabase, userId)
+
+  // Generate SaaS blueprints for saas-type projects in idea/requirements stage
+  let saasGenerated = 0
+  const { data: saasProjects } = await supabase.from('software_projects').select('id, name').eq('user_id', userId).eq('project_type', 'saas').in('status', ['idea', 'requirements']).limit(3)
+  for (const p of (saasProjects ?? []) as any[]) {
+    const { generateSaasProject } = await import('@/lib/software/saas-generator')
+    await generateSaasProject(supabase, userId, p.name)
+    saasGenerated++
+  }
+
+  // Scaffold boilerplates for projects in planning
+  let boilerplatesScaffolded = 0
+  const { data: bpProjects } = await supabase.from('software_projects').select('id, name, project_type').eq('user_id', userId).eq('status', 'planning').limit(3)
+  for (const p of (bpProjects ?? []) as any[]) {
+    const { scaffoldFromBoilerplate } = await import('@/lib/software/boilerplate-generator')
+    const type = p.project_type === 'api' ? 'express' : p.project_type === 'webapp' ? 'nextjs' : 'nextjs'
+    const files = await scaffoldFromBoilerplate(supabase, userId, p.id, type as any, p.name)
+    if (files > 0) boilerplatesScaffolded++
+  }
+
+  // Generate repos for projects in frontend/backend
+  let reposCreated = 0; let githubActionsCreated = 0
+  const { data: repoProjects } = await supabase.from('software_projects').select('id, name, project_type').eq('user_id', userId).in('status', ['frontend', 'backend']).limit(3)
+  for (const p of (repoProjects ?? []) as any[]) {
+    const { generateRepository, generateGithubActions } = await import('@/lib/software/repo-generator')
+    const repo = await generateRepository(supabase, userId, p.id, p.name, p.project_type)
+    if (repo) {
+      reposCreated++
+      const workflows = await generateGithubActions(supabase, userId, p.id, p.project_type, ['TypeScript', 'Node.js'])
+      if (workflows.length > 0) githubActionsCreated++
+    }
+  }
+
+  // Build CI/CD pipelines for projects in integration
+  let cicdPipelinesBuilt = 0
+  const { data: cicdProjects } = await supabase.from('software_projects').select('id, name, project_type, tech_stack').eq('user_id', userId).eq('status', 'integration').limit(3)
+  for (const p of (cicdProjects ?? []) as any[]) {
+    const { buildCicdPipeline } = await import('@/lib/software/cicd-builder')
+    const pipeline = await buildCicdPipeline(supabase, userId, p.id, p.project_type, 'vercel')
+    if (pipeline) {
+      cicdPipelinesBuilt++
+      await supabase.from('software_projects').update({ cicd_config: pipeline }).eq('id', p.id)
+    }
+  }
+
+  // Generate Docker configs for projects in testing
+  let dockerConfigsBuilt = 0
+  const { data: dockerProjects } = await supabase.from('software_projects').select('id, name, project_type, tech_stack').eq('user_id', userId).eq('status', 'testing').limit(3)
+  for (const p of (dockerProjects ?? []) as any[]) {
+    const { generateDockerConfig } = await import('@/lib/software/docker-builder')
+    const docker = await generateDockerConfig(supabase, userId, p.id, p.project_type, p.tech_stack || [])
+    if (docker) {
+      dockerConfigsBuilt++
+      await supabase.from('software_projects').update({ docker_config: docker }).eq('id', p.id)
+    }
+  }
+
+  // Generate K8s templates for deployed projects
+  let k8sTemplatesGenerated = 0
+  const { data: k8sProjects } = await supabase.from('software_projects').select('id, name, project_type, tech_stack').eq('user_id', userId).eq('status', 'deployment').limit(3)
+  for (const p of (k8sProjects ?? []) as any[]) {
+    const { generateK8sTemplates } = await import('@/lib/software/k8s-templates')
+    const k8s = await generateK8sTemplates(supabase, userId, p.id, p.name, p.tech_stack || [])
+    if (k8s) {
+      k8sTemplatesGenerated++
+      await supabase.from('software_projects').update({ k8s_config: k8s }).eq('id', p.id)
+    }
+  }
+
+  // Deploy projects (Vercel + Cloudflare)
+  let vercelDeploys = 0; let cloudflareDeploys = 0; let rollbacksExecuted = 0
+  const { deployMultipleProjects, deploySoftwareProject, rollbackDeployment } = await import('@/lib/software/deployment-engine')
+  const vercelResult = await deployMultipleProjects(supabase, userId, 'vercel')
+  vercelDeploys = vercelResult.deployed
+  rollbacksExecuted = vercelResult.rollbacks
+
+  const cfResult = await deployMultipleProjects(supabase, userId, 'cloudflare')
+  cloudflareDeploys = cfResult.deployed
+
+  // Generate test suites for projects in deployment
+  let testSuitesGenerated = 0
+  const { generateTestSuite } = await import('@/lib/software/testing-engine')
+  const { data: testProjects } = await supabase.from('software_projects').select('id, name, project_type, tech_stack').eq('user_id', userId).in('status', ['deployment', 'maintenance']).limit(3)
+  for (const p of (testProjects ?? []) as any[]) {
+    const spec = await generateTestSuite(supabase, userId, p.id, p.name, p.project_type, (p.tech_stack || ['TypeScript'])[0])
+    if (spec) testSuitesGenerated++
+  }
+
   const metrics = await getSwMetrics(supabase, userId)
   await storeMemory(supabase, userId, {
     category: 'software_learning', tags: ['software_cycle'],
-    content: { ...stages, metrics, runAt: new Date().toISOString() },
+    content: { ...stages, saasGenerated, boilerplatesScaffolded, reposCreated, githubActionsCreated, cicdPipelinesBuilt, dockerConfigsBuilt, k8sTemplatesGenerated, vercelDeploys, cloudflareDeploys, rollbacksExecuted, testSuitesGenerated, metrics, runAt: new Date().toISOString() },
   })
   await supabase.from('execution_logs').insert([{
-    user_id: userId, command_id: null, action: '[Software] Cycle completed', module: 'development', status: 'success',
-    message: `Reqs: ${stages.requirements}, Arch: ${stages.architected}, Deployed: ${stages.deployed}`,
+    user_id: userId, command_id: null, action: '[Software Factory] Cycle completed', module: 'development', status: 'success',
+    message: `Reqs: ${stages.requirements}, Deployed: ${stages.deployed}, SaaS: ${saasGenerated}, Repos: ${reposCreated}, CICD: ${cicdPipelinesBuilt}, Docker: ${dockerConfigsBuilt}, K8s: ${k8sTemplatesGenerated}, Tests: ${testSuitesGenerated}`,
   }])
-  return stages
+  return { ...stages, saasGenerated, boilerplatesScaffolded, reposCreated, githubActionsCreated, cicdPipelinesBuilt, dockerConfigsBuilt, k8sTemplatesGenerated, vercelDeploys, cloudflareDeploys, rollbacksExecuted, testSuitesGenerated }
 }

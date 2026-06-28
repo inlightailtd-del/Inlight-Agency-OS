@@ -27,7 +27,10 @@ export default async function ContentPage({ searchParams }: { searchParams?: { q
         <div className="flex gap-3">
           <Link href="/dashboard/content/dashboard"><Button variant="outline">Analytics</Button></Link>
           <Link href="/dashboard/content/history"><Button variant="outline">History</Button></Link>
-          <Link href="/dashboard/content/new"><Button>New Request</Button></Link>
+          <Link href="/dashboard/content/new"><Button variant="outline">New Request</Button></Link>
+          <form action="/api/content-workflow/run" method="POST" className="inline">
+            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">Run Content Pipeline</Button>
+          </form>
         </div>
       </div>
 

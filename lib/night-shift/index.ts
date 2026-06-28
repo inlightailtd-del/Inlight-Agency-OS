@@ -1,2 +1,6 @@
 export { NightShiftEngine } from './night-shift'
+export { NightShiftDaemon } from './daemon'
+export { NightShiftRuntime } from './runtime'
+export { GitOperations } from './git-operations'
+export { NightShiftMonitor } from './monitoring'
 export type * from './types'

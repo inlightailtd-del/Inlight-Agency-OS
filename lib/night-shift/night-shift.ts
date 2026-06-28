@@ -98,6 +98,16 @@ export class NightShiftEngine {
     await this.supabase.from('night_shift_schedule').update({ is_active: config.isActive ?? c.isActive, interval_minutes: config.intervalMinutes ?? c.intervalMinutes, max_cycles: config.maxCycles ?? c.maxCycles, updated_at: new Date().toISOString() }).eq('user_id', this.userId)
   }
 
+  async log(action: string, message: string, status = 'success'): Promise<void> {
+    try {
+      await this.supabase.from('execution_logs').insert([{
+        user_id: this.userId, command_id: null,
+        action: `[NightShift] ${action}`, module: 'night_shift',
+        status, message,
+      }])
+    } catch { /* best effort */ }
+  }
+
   async bulkRun(maxCycles = 10, perCycleTimeout = 120000): Promise<NightShiftResult> {
     const startTime = Date.now(); let cycles = 0, completed = 0, failed = 0, skipped = 0, totalPhases = 0, totalCommits = 0, totalErrors = 0; const errors: string[] = []
     for (let i = 0; i < maxCycles; i++) {

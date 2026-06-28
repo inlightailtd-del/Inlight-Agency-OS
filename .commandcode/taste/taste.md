@@ -8,6 +8,7 @@
 
 # workflow
 See [workflow/taste.md](workflow/taste.md)
+- Before integrating external repositories, APIs, or tools, first fully understand the existing codebase by reading all code, documentation, migrations, agents, database structures, and workflows; then document the complete system architecture, identify integration gaps, and create a dependency plan before pulling in any external resources. Confidence: 0.70
 
 # testing
 - During production verification/end-to-end testing, show full proof at each step (API response + database rows + success/failure status) before proceeding to the next step; do not claim success without verifiable evidence. Confidence: 0.70
@@ -21,6 +22,9 @@ See [workflow/taste.md](workflow/taste.md)
 # integrations
 - Before executing OAuth flows (Facebook, LinkedIn, Gmail, etc.), first verify app registration details (App ID, redirect URI, required permissions, scopes), existing provider code status, and whether all prerequisite permissions exist in the external platform's app dashboard; return a structured "Ready / Not Ready" assessment with exact files/code changes required before proceeding. Confidence: 0.80
 - When upgrading business intelligence modules from AI-assisted to data-driven, prioritize external API integrations in this order: 1) Google Trends, 2) SerpAPI, 3) Reddit, 4) YouTube, 5) LinkedIn, 6) Website Scraping. Confidence: 0.70
+
+# database
+- When rerunning or auditing migrations, first identify which statements already exist, which failed, and which are still missing; then create an idempotent version using IF NOT EXISTS guards (CREATE TABLE IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, CREATE POLICY IF NOT EXISTS) and conditional checks to prevent duplicate-policy errors. Confidence: 0.70
 
 # database
 - When Docker is unavailable for local Supabase operations (db diff, migration list), use the Supabase Management API `/v1/projects/{ref}/database/query` endpoint with a PAT token to execute SQL DDL (CREATE TABLE, ALTER TABLE) and queries directly against the remote database; build combined migration files using Node.js scripts. Confidence: 0.70

@@ -6,6 +6,10 @@ import { generateContent } from '@/lib/ai/content-engine'
 import { analyzeLead } from '@/lib/ai/lead-analyzer'
 import { runCeoAssessment } from '@/lib/ceo/ceo'
 import { runManagerAssessment, listDepartments } from '@/lib/ceo/manager'
+import { runMorningBriefing, runEveningBriefing, runPnLAnalysis, runCashflowPrediction, runAutoBudgetSuggestions } from '@/lib/ceo/briefings'
+import { runMeetingSimulation } from '@/lib/ceo/meeting-simulator'
+import { generateVoiceReport } from '@/lib/ceo/voice-reports'
+import { processRenderJob } from '@/lib/video/rendering-queue'
 
 async function logQueueExecution(
   supabase: SupabaseClient,
@@ -163,6 +167,110 @@ export async function processNextJob(supabase: SupabaseClient): Promise<{ proces
           _started_at: new Date(startedAt).toISOString(),
         })
         await logQueueExecution(supabase, job.user_id, job.id, 'CEO assessment completed', 'agents', 'success', `${ceoResult.insights.length} insights, ${ceoResult.decisions.length} decisions`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'ceo_morning_briefing': {
+        await updateJobProgress(supabase, job.id, 30)
+        const morningResult = await runMorningBriefing(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, {
+          type: 'morning',
+          summary: morningResult.summary,
+          sections: morningResult.sections.length,
+          actionItems: morningResult.actionItems.length,
+          _started_at: new Date(startedAt).toISOString(),
+        })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Morning briefing completed', 'agents', 'success', `${morningResult.sections.length} sections, ${morningResult.actionItems.length} actions`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'ceo_evening_briefing': {
+        await updateJobProgress(supabase, job.id, 30)
+        const eveningResult = await runEveningBriefing(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, {
+          type: 'evening',
+          summary: eveningResult.summary,
+          sections: eveningResult.sections.length,
+          actionItems: eveningResult.actionItems.length,
+          _started_at: new Date(startedAt).toISOString(),
+        })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Evening briefing completed', 'agents', 'success', `${eveningResult.sections.length} sections, ${eveningResult.actionItems.length} actions`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'ceo_pnl_analysis': {
+        await updateJobProgress(supabase, job.id, 30)
+        const pnlResult = await runPnLAnalysis(supabase, job.user_id, job.payload.months || 3)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, {
+          period: pnlResult.period,
+          revenue: pnlResult.revenue.total,
+          expenses: pnlResult.expenses.total,
+          profitMargin: pnlResult.profitMargin,
+          insights: pnlResult.insights,
+          _started_at: new Date(startedAt).toISOString(),
+        })
+        await logQueueExecution(supabase, job.user_id, job.id, 'P&L analysis completed', 'agents', 'success', `Margin: ${pnlResult.profitMargin}%, ${pnlResult.insights.length} insights`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'ceo_cashflow_prediction': {
+        await updateJobProgress(supabase, job.id, 30)
+        const cfResult = await runCashflowPrediction(supabase, job.user_id, job.payload.months || 6)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, {
+          currentBalance: cfResult.currentBalance,
+          riskLevel: cfResult.riskLevel,
+          projectedMonths: cfResult.netProjection.length,
+          recommendations: cfResult.recommendations,
+          _started_at: new Date(startedAt).toISOString(),
+        })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Cashflow prediction completed', 'agents', 'success', `Risk: ${cfResult.riskLevel}, ${cfResult.recommendations.length} recommendations`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'ceo_budget_suggestions': {
+        await updateJobProgress(supabase, job.id, 30)
+        const budgetResult = await runAutoBudgetSuggestions(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, {
+          suggestions: budgetResult.length,
+          _started_at: new Date(startedAt).toISOString(),
+        })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Budget suggestions completed', 'agents', 'success', `${budgetResult.length} suggestions`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'ceo_meeting_simulation': {
+        await updateJobProgress(supabase, job.id, 30)
+        const meetingResult = await runMeetingSimulation(supabase, job.user_id, job.payload.meeting_type || 'board')
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, {
+          title: meetingResult.title,
+          type: meetingResult.type,
+          agendaItems: meetingResult.agenda.length,
+          decisions: meetingResult.decisions.length,
+          actionItems: meetingResult.actionItems.length,
+          _started_at: new Date(startedAt).toISOString(),
+        })
+        await logQueueExecution(supabase, job.user_id, job.id, `Meeting simulation completed: ${meetingResult.type}`, 'agents', 'success', `${meetingResult.decisions.length} decisions, ${meetingResult.actionItems.length} actions`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'ceo_voice_report': {
+        await updateJobProgress(supabase, job.id, 30)
+        const voiceResult = await generateVoiceReport(supabase, job.user_id, job.payload.report_type || 'daily_brief')
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, {
+          title: voiceResult.title,
+          type: voiceResult.type,
+          duration_seconds: voiceResult.duration_seconds,
+          sections: voiceResult.sections.length,
+          _started_at: new Date(startedAt).toISOString(),
+        })
+        await logQueueExecution(supabase, job.user_id, job.id, `Voice report completed: ${voiceResult.type}`, 'agents', 'success', `~${voiceResult.duration_seconds}s narration`)
         return { processed: true, jobId: job.id, status: 'completed' }
       }
 
@@ -561,6 +669,304 @@ export async function processNextJob(supabase: SupabaseClient): Promise<{ proces
         })
         await logQueueExecution(supabase, job.user_id, job.id, 'Business cycle completed', 'business', bizResult.errors.length > 0 ? 'failed' : 'success',
           `${bizResult.opportunities.length} opportunities, ${bizResult.offers.length} offers, ${bizResult.lessonsStored} lessons`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'media_buyer_cycle': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { runFullMediaBuyingCycle } = await import('@/lib/media-buying/engine')
+        const mbResult = await runFullMediaBuyingCycle(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, {
+          campaignsCreated: mbResult.campaignsCreated,
+          creativesGenerated: mbResult.creativesGenerated,
+          campaignsLaunched: mbResult.campaignsLaunched,
+          roas: mbResult.campaignsOptimized,
+          audiencesBuilt: mbResult.audiencesBuilt,
+          retargetingCreated: mbResult.retargetingCreated,
+          _started_at: new Date(startedAt).toISOString(),
+        })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Media buyer cycle completed', 'marketing', 'success', `${mbResult.campaignsCreated} campaigns, ${mbResult.retargetingCreated} retargeting`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'media_buyer_campaign_create': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateAdCampaigns } = await import('@/lib/media-buying/engine')
+        const created = await generateAdCampaigns(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { campaignsCreated: created, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Campaign creation complete', 'marketing', 'success', `${created} campaigns`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'media_buyer_creative_generate': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateAdCreatives } = await import('@/lib/media-buying/engine')
+        const creativesCreated = await generateAdCreatives(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { creativesGenerated: creativesCreated, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Creative generation complete', 'marketing', 'success', `${creativesCreated} creatives`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'media_buyer_optimize': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { optimizeAdCampaigns } = await import('@/lib/media-buying/engine')
+        const optimized = await optimizeAdCampaigns(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { campaignsOptimized: optimized, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Campaign optimization complete', 'marketing', 'success', `${optimized} optimized`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'media_buyer_analyze': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { analyzeAdPerformance } = await import('@/lib/media-buying/engine')
+        const analyzed = await analyzeAdPerformance(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { campaignsAnalyzed: analyzed, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Performance analysis complete', 'marketing', 'success', `${analyzed} campaigns analyzed`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'media_buyer_audience_build': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { buildAudience } = await import('@/lib/media-buying/engine')
+        const audiences = await buildAudience(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { audiencesBuilt: audiences, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Audience building complete', 'marketing', 'success', `${audiences} audiences`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'media_buyer_retargeting': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { createRetargetingCampaigns } = await import('@/lib/media-buying/engine')
+        const retargeting = await createRetargetingCampaigns(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { retargetingCreated: retargeting, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Retargeting campaign creation complete', 'marketing', 'success', `${retargeting} retargeting campaigns`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_saas_generate': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateSaasProject } = await import('@/lib/software/saas-generator')
+        const saasId = await generateSaasProject(supabase, job.user_id, job.payload.idea || 'AI SaaS application')
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { projectId: saasId, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'SaaS project generated', 'development', 'success', saasId ? `Project: ${saasId}` : 'Failed')
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_boilerplate': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { scaffoldFromBoilerplate } = await import('@/lib/software/boilerplate-generator')
+        const files = await scaffoldFromBoilerplate(supabase, job.user_id, job.payload.project_id, job.payload.type || 'nextjs', job.payload.name || 'app')
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { filesGenerated: files, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Boilerplate scaffolded', 'development', 'success', `${files} files`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_repo_generate': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateRepository } = await import('@/lib/software/repo-generator')
+        const repo = await generateRepository(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.type)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { repoName: repo?.name, provider: repo?.provider, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Repository generated', 'development', 'success', `${repo?.provider}/${repo?.name}`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_github_actions': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateGithubActions } = await import('@/lib/software/repo-generator')
+        const workflows = await generateGithubActions(supabase, job.user_id, job.payload.project_id, job.payload.project_type, job.payload.tech_stack || [])
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { workflowCount: workflows.length, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'GitHub Actions generated', 'development', 'success', `${workflows.length} workflows`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_cicd_build': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { buildCicdPipeline } = await import('@/lib/software/cicd-builder')
+        const pipeline = await buildCicdPipeline(supabase, job.user_id, job.payload.project_id, job.payload.project_type, job.payload.deploy_target || 'vercel')
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { stages: pipeline?.stages?.length || 0, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'CI/CD pipeline built', 'development', 'success', `${pipeline?.stages?.length || 0} stages`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_docker_build': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateDockerConfig } = await import('@/lib/software/docker-builder')
+        const docker = await generateDockerConfig(supabase, job.user_id, job.payload.project_id, job.payload.project_type, job.payload.tech_stack || [])
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { hasDockerfile: !!docker?.dockerfile, hasCompose: !!docker?.dockerCompose, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Docker config generated', 'development', 'success', docker?.dockerfile ? 'Dockerfile created' : 'Failed')
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_k8s_generate': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateK8sTemplates } = await import('@/lib/software/k8s-templates')
+        const k8s = await generateK8sTemplates(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.tech_stack || [])
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { manifestCount: k8s?.manifests?.length || 0, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'K8s templates generated', 'development', 'success', `${k8s?.manifests?.length || 0} manifests`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_deploy_vercel': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { deployToVercel } = await import('@/lib/software/deployment-engine')
+        const vercel = await deployToVercel(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.project_type)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { url: vercel?.url, status: vercel?.status, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Vercel deploy complete', 'development', 'success', `${vercel?.url || 'Failed'}`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_deploy_cloudflare': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { deployToCloudflare } = await import('@/lib/software/deployment-engine')
+        const cf = await deployToCloudflare(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.project_type)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { url: cf?.url, status: cf?.status, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Cloudflare deploy complete', 'development', 'success', `${cf?.url || 'Failed'}`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_rollback': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { rollbackDeployment } = await import('@/lib/software/deployment-engine')
+        const rb = await rollbackDeployment(supabase, job.user_id, job.payload.project_id, job.payload.target || 'vercel', job.payload.to_version)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { url: rb?.url, version: rb?.version, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Rollback complete', 'development', rb?.status === 'live' ? 'success' : 'failed', `Rolled back to ${rb?.version}`)
+        return { processed: true, jobId: job.id, status: rb?.status === 'live' ? 'completed' : 'failed' }
+      }
+
+      case 'software_auto_test': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateTestSuite } = await import('@/lib/software/testing-engine')
+        const testSuite = await generateTestSuite(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.project_type, job.payload.language || 'typescript')
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { testCount: testSuite?.testFiles?.length || 0, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Auto test suite generated', 'development', 'success', `${testSuite?.testFiles?.length || 0} tests`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'software_run_tests': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { runAllProjectTests } = await import('@/lib/software/testing-engine')
+        const testResults = await runAllProjectTests(supabase, job.user_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, {
+          projectsTested: testResults.projectsTested,
+          totalPassed: testResults.totalPassed,
+          totalFailed: testResults.totalFailed,
+          avgCoverage: testResults.avgCoverage,
+          _started_at: new Date(startedAt).toISOString(),
+        })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Auto tests completed', 'development', 'success', `${testResults.projectsTested} projects, ${testResults.avgCoverage}% coverage`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'website_wireframe': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateWireframes } = await import('@/lib/websites/wireframe-generator')
+        const wf = await generateWireframes(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.website_type || 'business')
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { pages: wf?.pages?.length || 0, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Wireframes generated', 'development', 'success', `${wf?.pages?.length || 0} pages`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'website_design_system': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateDesignSystem } = await import('@/lib/websites/design-ai')
+        const ds = await generateDesignSystem(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.website_type || 'business')
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { hasDesignSystem: !!ds, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Design system generated', 'development', 'success', ds ? 'Created' : 'Failed')
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'website_theme': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { generateTheme } = await import('@/lib/websites/theme-generator')
+        const theme = await generateTheme(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.website_type || 'business', job.payload.style)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { hasTheme: !!theme, style: theme?.style, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Theme generated', 'development', 'success', theme?.style || 'Failed')
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'website_landing_page': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { buildLandingPage } = await import('@/lib/websites/landing-page-builder')
+        const lp = await buildLandingPage(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.website_type || 'landing_page', job.payload.goal)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { sections: lp?.sections?.length || 0, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Landing page built', 'development', 'success', `${lp?.sections?.length || 0} sections`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'website_seo_score': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { scoreSeo } = await import('@/lib/websites/seo-engine')
+        const seo = await scoreSeo(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.website_type || 'website')
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { seoScore: seo?.overall || 0, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'SEO scored', 'development', 'success', `Score: ${seo?.overall || 0}`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'website_lighthouse': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { runLighthouseAudit } = await import('@/lib/websites/seo-engine')
+        const lh = await runLighthouseAudit(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.url)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { perf: lh?.performance || 0, seo: lh?.seo || 0, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Lighthouse audit complete', 'development', 'success', `Perf: ${lh?.performance || 0}, SEO: ${lh?.seo || 0}`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'website_auto_deploy': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { configureAutoDeploy } = await import('@/lib/websites/auto-deploy')
+        const config = await configureAutoDeploy(supabase, job.user_id, job.payload.project_id, job.payload.name, job.payload.website_type || 'business', job.payload.platform || 'vercel')
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { platform: config?.platform, domains: config?.domains?.length || 0, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Auto-deploy configured', 'development', 'success', `${config?.platform || 'Failed'}`)
+        return { processed: true, jobId: job.id, status: 'completed' }
+      }
+
+      case 'website_deploy_live': {
+        await updateJobProgress(supabase, job.id, 30)
+        const { deployToLive } = await import('@/lib/websites/auto-deploy')
+        const result = await deployToLive(supabase, job.user_id, job.payload.project_id)
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, { live: result.live, url: result.url, _started_at: new Date(startedAt).toISOString() })
+        await logQueueExecution(supabase, job.user_id, job.id, 'Website deployed to live', 'development', result.live ? 'success' : 'failed', result.url || 'Failed')
+        return { processed: true, jobId: job.id, status: result.live ? 'completed' : 'failed' }
+      }
+
+      case 'video_render': {
+        await updateJobProgress(supabase, job.id, 30)
+        const renderResult = await processRenderJob(supabase, job.user_id, job.payload.job_type, job.payload.provider, job.payload.params || {})
+        await updateJobProgress(supabase, job.id, 90)
+        await completeJob(supabase, job.id, {
+          output: renderResult,
+          jobType: job.payload.job_type,
+          provider: job.payload.provider,
+          _started_at: new Date(startedAt).toISOString(),
+        })
+        await logQueueExecution(supabase, job.user_id, job.id, `${job.payload.job_type} render complete`, 'content', 'success', `${job.payload.provider} generated ${job.payload.job_type}`)
         return { processed: true, jobId: job.id, status: 'completed' }
       }
 

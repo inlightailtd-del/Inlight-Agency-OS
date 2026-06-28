@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatDateTime } from '@/lib/utils'
 import { getVideoMetrics, getVideoPipeline, runFullVideoCycle, createVideoCampaign, VIDEO_STAGES } from '@/lib/video/engine'
+import { getRenderQueueStats } from '@/lib/video/rendering-queue'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -53,6 +54,8 @@ export default async function VideoPage() {
     getVideoPipeline(supabase, user.id),
   ])
 
+  const renderQueueStats = await getRenderQueueStats(supabase, user.id)
+
   return (
     <div>
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between mb-6">
@@ -94,6 +97,14 @@ export default async function VideoPage() {
         <StatCard title="Total Likes" value={metrics.totalLikes.toLocaleString()} color="text-rose-600" />
         <StatCard title="Total Comments" value={metrics.totalComments.toLocaleString()} color="text-indigo-600" />
         <StatCard title="Total Shares" value={metrics.totalShares.toLocaleString()} color="text-emerald-600" />
+      </div>
+
+      {/* Render Queue Status */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <StatCard title="Render Queue" value={renderQueueStats.total} color="text-indigo-600" />
+        <StatCard title="Queued" value={renderQueueStats.queued} color="text-amber-600" />
+        <StatCard title="Failed" value={renderQueueStats.failed} color={renderQueueStats.failed > 0 ? 'text-rose-600' : 'text-emerald-600'} />
+        <StatCard title="Completed" value={renderQueueStats.completed || 0} color="text-emerald-600" />
       </div>
 
       {/* Video Team */}

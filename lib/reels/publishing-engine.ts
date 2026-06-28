@@ -13,9 +13,11 @@ export class PublishingEngine extends BaseReelsModule {
     const results: PublishResult[] = []
 
     // Check which platforms are connected
-    const [linkedinConnected, facebookConnected] = await Promise.all([
+    const [linkedinConnected, facebookConnected, instagramConnected, youtubeConnected] = await Promise.all([
       this.sdk.getProviderStatus('linkedin').then(s => s.connected).catch(() => false),
       this.sdk.getProviderStatus('facebook').then(s => s.connected).catch(() => false),
+      this.sdk.getProviderStatus('instagram').then(s => s.connected).catch(() => false),
+      this.sdk.getProviderStatus('youtube').then(s => s.connected).catch(() => false),
     ])
 
     const content = video.caption || `${video.title}\n\n${video.hashtags?.join(' ') || ''}`
@@ -71,13 +73,81 @@ export class PublishingEngine extends BaseReelsModule {
       }
     }
 
+    // Instagram (Reel)
+    if (instagramConnected && video.videoUrl) {
+      try {
+        const result = await this.sdk.executeAction('instagram', 'publish_reel', {
+          mediaUrl: video.videoUrl,
+          caption: content,
+          shareToFeed: true,
+          thumbOffset: 0,
+        })
+
+        if (result.success) {
+          results.push({
+            platform: 'instagram',
+            success: true,
+            platformPostId: result.data?.mediaId,
+            platformUrl: result.data?.url,
+          })
+        } else {
+          results.push({ platform: 'instagram', success: false, error: result.error })
+        }
+      } catch (e: any) {
+        results.push({ platform: 'instagram', success: false, error: e.message })
+      }
+    }
+
+    // YouTube
+    if (youtubeConnected && video.videoUrl) {
+      try {
+        // Derive whether it's a Short from duration (≤60s)
+        const isShort = video.durationSeconds <= 60
+
+        const result = await this.sdk.executeAction('youtube', 'upload_video', {
+          title: video.title,
+          description: content,
+          videoUrl: video.videoUrl,
+          tags: video.hashtags || [],
+          categoryId: '22', // Science & Technology
+          isShort,
+          privacyStatus: 'public',
+        })
+
+        if (result.success) {
+          // Also upload thumbnail if we have one
+          if (video.thumbnailUrl) {
+            try {
+              await this.sdk.executeAction('youtube', 'upload_thumbnail', {
+                videoId: result.data.videoId,
+                thumbnailUrl: video.thumbnailUrl,
+              })
+            } catch {
+              // Non-blocking — thumbnail upload failure doesn't block the video
+            }
+          }
+
+          results.push({
+            platform: 'youtube',
+            success: true,
+            platformPostId: result.data.videoId,
+            platformUrl: result.data.url,
+          })
+        } else {
+          results.push({ platform: 'youtube', success: false, error: result.error })
+        }
+      } catch (e: any) {
+        results.push({ platform: 'youtube', success: false, error: e.message })
+      }
+    }
+
     // Update video platform_status and status
     if (video.id) {
       const platformStatus: Record<string, string> = {
         linkedin: linkedinConnected ? (results.find(r => r.platform === 'linkedin')?.success ? 'published' : 'failed') : 'unavailable',
         facebook: facebookConnected ? (results.find(r => r.platform === 'facebook')?.success ? 'published' : 'failed') : 'unavailable',
-        instagram: 'unavailable',
-        youtube: 'unavailable',
+        instagram: instagramConnected ? (results.find(r => r.platform === 'instagram')?.success ? 'published' : 'failed') : 'unavailable',
+        youtube: youtubeConnected ? (results.find(r => r.platform === 'youtube')?.success ? 'published' : 'failed') : 'unavailable',
       }
 
       const anySuccess = results.some(r => r.success)

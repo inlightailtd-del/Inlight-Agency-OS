@@ -1,7 +1,14 @@
 export type ProviderName =
-  | 'gmail' | 'outlook' | 'linkedin' | 'apollo' | 'clay' | 'instantly' | 'smartlead'
-  | 'calendly' | 'hubspot' | 'stripe' | 'twilio' | 'vapi' | 'bland_ai' | 'retell_ai'
+  | 'gmail' | 'outlook' | 'resend' | 'linkedin' | 'apollo' | 'clay' | 'instantly' | 'smartlead'
+  | 'calendly' | 'hubspot' | 'stripe' | 'paddle' | 'twilio' | 'vapi' | 'bland_ai' | 'retell_ai'
   | 'elevenlabs' | 'openai_realtime' | 'facebook' | 'instagram' | 'x' | 'youtube'
+  | 'runway' | 'veo' | 'pika' | 'kling' | 'whisper'
+  | 'facebook_ads' | 'google_ads' | 'linkedin_ads' | 'tiktok_ads'
+  | 'github' | 'gitlab' | 'vercel' | 'cloudflare'
+  | 'figma' | 'canva'
+  | 'whatsapp'
+  | 'salesforce' | 'slack' | 'discord' | 'telegram' | 'airtable'
+  | 'n8n' | 'make'
 
 export type AuthType = 'oauth' | 'api_key' | 'both'
 

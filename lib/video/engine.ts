@@ -2,6 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { executeAgentTask } from '@/lib/ai/execution'
 import { storeMemory } from '@/lib/ai/memory'
 import { assignTaskToEmployee } from '@/lib/employees/employee'
+import { enqueueRenderJob, processRenderJob, getRenderQueueStats } from './rendering-queue'
+import { generateStoryboard, storeStoryboard } from './storyboard-engine'
+import { generateSubtitlesFromScript, formatSubtitles, storeSubtitles } from './subtitle-engine'
 
 export const VIDEO_STAGES = ['idea', 'script', 'voiceover', 'assets', 'editing', 'thumbnail', 'review', 'scheduled', 'published'] as const
 export type VideoStage = (typeof VIDEO_STAGES)[number]
@@ -11,13 +14,15 @@ export interface VideoMetrics {
   campaignsActive: number; totalViews: number; totalLikes: number
   totalComments: number; totalShares: number; avgViralScore: number
   publishedThisWeek: number; publishedThisMonth: number
+  renderQueueStats: { total: number; queued: number; failed: number }
 }
 
 interface VideoProject {
   id: string; title: string; content_type: string; status: string; platform: string | null
   assignee_id: string | null; scheduled_at: string | null; published_at: string | null
   views: number; likes: number; comments: number; shares: number; viral_score: number
-  hook_text: string | null; duration_seconds: number | null; created_at: string
+  hook_text: string | null; duration_seconds: number | null; script_content: string | null
+  created_at: string
 }
 
 const VIDEO_AGENTS = {
@@ -58,11 +63,6 @@ export async function createVideoCampaign(supabase: SupabaseClient, userId: stri
     user_id: userId, name, description, goal, target_platforms: platforms, status: 'planned',
   }]).select('id').single()
   if (!campaign) throw new Error('Failed to create campaign')
-
-  await storeMemory(supabase, userId, {
-    category: 'content_strategy', tags: ['video_campaign', name.toLowerCase().replace(/\s+/g, '_')],
-    content: { type: 'video_campaign_created', campaignId: campaign.id, name, description, goal, platforms, createdAt: new Date().toISOString() },
-  })
   return campaign.id
 }
 
@@ -74,8 +74,8 @@ export async function generateVideoIdeas(supabase: SupabaseClient, userId: strin
     if (c) campaignInfo = ` for campaign: ${c.name}${c.goal ? ` (${c.goal})` : ''}`
   }
 
-  const systemPrompt = 'You are a Video Strategist. Generate 3 video content ideas. Return JSON: {"ideas": [{"title": "string", "description": "string", "content_type": "reel|short|long", "platform": "youtube|instagram|tiktok|linkedin|facebook|twitter", "hook": "string", "duration_seconds": number}]}'
-  const result = await executeAgentTask(supabase, userId, null,
+  const systemPrompt = `You are a Video Strategist. Generate 3 video content ideas. Return JSON: {"ideas": [{"title": "string", "description": "string", "content_type": "reel|short|long", "platform": "youtube|instagram|tiktok|linkedin|facebook|twitter", "hook": "string", "duration_seconds": number, "visual_style": "cinematic|documentary|commercial|vlog|animated|motion_graphics", "target_emotion": "inspire|educate|entertain|inform|persuade"}]}`
+  const result = await executeAgentTask(supabase, userId, agents.strategist,
     `Generate video content ideas${campaignInfo}. Include a mix of reels, short-form, and long-form content.`, { systemPrompt }
   )
 
@@ -96,42 +96,115 @@ export async function generateVideoIdeas(supabase: SupabaseClient, userId: strin
 }
 
 export async function advanceVideoStage(supabase: SupabaseClient, userId: string): Promise<{
-  scripted: number; voiced: number; assetsCollected: number; edited: number
+  scripted: number; storyboarded: number; voiced: number; subtitled: number
+  bRollGenerated: number; assetsCollected: number; edited: number
   thumbnailed: number; reviewed: number; scheduled: number; published: number
 }> {
-  let scripted = 0; let voiced = 0; let assetsCollected = 0; let edited = 0
+  let scripted = 0; let storyboarded = 0; let voiced = 0; let subtitled = 0
+  let bRollGenerated = 0; let assetsCollected = 0; let edited = 0
   let thumbnailed = 0; let reviewed = 0; let scheduled = 0; let published = 0
   const agents = await ensureVideoAgents(supabase, userId)
 
-  // idea → script
-  const { data: ideas } = await supabase.from('video_projects').select('id, title, description, hook_text, content_type, platform').eq('user_id', userId).eq('status', 'idea').limit(5)
+  // idea → script + storyboard
+  const { data: ideas } = await supabase.from('video_projects').select('id, title, description, hook_text, content_type, platform, duration_seconds').eq('user_id', userId).eq('status', 'idea').limit(5)
   for (const item of (ideas ?? []) as any[]) {
-    const systemPrompt = 'You are a Script Writer. Write a compelling video script. Return JSON: {"script": "full script with hook, body, CTA", "hook": "string"}'
-    const result = await executeAgentTask(supabase, userId, null,
-      `Write a ${item.content_type || 'short'} video script for "${item.title}"${item.hook_text ? ` (hook idea: ${item.hook_text})` : ''} on ${item.platform || 'youtube'}.`, { systemPrompt }
+    const systemPrompt = `You are a Script Writer. Write a compelling video script with storyboard scenes. Return JSON: {"script": "full script with hook, body, CTA", "hook": "string", "storyboard": [{"scene": 1, "visual": "description", "dialogue": "text", "duration_seconds": number}]}`
+    const result = await executeAgentTask(supabase, userId, agents.script_writer,
+      `Write a ${item.content_type || 'short'} video script for "${item.title}"${item.hook_text ? ` (hook idea: ${item.hook_text})` : ''} on ${item.platform || 'youtube'}.${item.duration_seconds ? ` Target duration: ${item.duration_seconds}s.` : ''}`,
+      { systemPrompt }
     )
-    let script = ''; let hook = ''
-    try { const p = JSON.parse(result.response || '{}'); script = p.script || result.response; hook = p.hook || item.hook_text || '' } catch { script = result.response || '' }
+    let script = ''; let hook = ''; let storyboardScenes: any[] = []
+    try {
+      const p = JSON.parse(result.response || '{}')
+      script = p.script || result.response
+      hook = p.hook || item.hook_text || ''
+      storyboardScenes = p.storyboard || []
+    } catch { script = result.response || '' }
+
     await supabase.from('video_projects').update({
       status: 'script', script_content: script, hook_text: hook || item.hook_text,
-      assignee_id: agents.script_writer, updated_at: new Date().toISOString(),
+      assignee_id: agents.script_writer, storyboard_json: JSON.stringify({ scenes: storyboardScenes }),
+      updated_at: new Date().toISOString(),
     }).eq('id', item.id)
-    await assignTaskToEmployee(supabase, userId, agents.script_writer, `Write script: ${item.title}`, `Create a ${item.content_type} script for ${item.platform || 'youtube'}`)
+
+    if (storyboardScenes.length > 0) {
+      await storeStoryboard(supabase, userId, item.id, {
+        title: item.title,
+        total_duration_seconds: storyboardScenes.reduce((s: number, sc: any) => s + (sc.duration_seconds || 3), 0),
+        scenes: storyboardScenes.map((sc: any) => ({
+          scene: sc.scene || 0,
+          duration_seconds: sc.duration_seconds || 3,
+          visual_description: sc.visual || sc.visual_description || '',
+          camera_angle: sc.camera_angle || 'medium',
+          dialogue: sc.dialogue || '',
+          background_music: sc.background_music || 'ambient',
+          visual_style: sc.visual_style || 'cinematic',
+          transition: sc.transition || 'cut',
+        })),
+        visual_theme: 'Generated from script',
+        color_palette: ['#1a1a2e', '#16213e', '#0f3460'],
+      })
+    }
     scripted++
+    storyboarded += storyboardScenes.length > 0 ? 1 : 0
   }
 
-  // script → voiceover
-  const { data: scripts } = await supabase.from('video_projects').select('id, title').eq('user_id', userId).eq('status', 'script').limit(5)
+  // script → voiceover (use ElevenLabs if configured)
+  const { data: scripts } = await supabase.from('video_projects').select('id, title, script_content, content_type').eq('user_id', userId).eq('status', 'script').limit(5)
   for (const item of (scripts ?? []) as any[]) {
-    await supabase.from('video_projects').update({ status: 'voiceover', assignee_id: agents.voiceover, updated_at: new Date().toISOString() }).eq('id', item.id)
-    await assignTaskToEmployee(supabase, userId, agents.voiceover, `Create voiceover: ${item.title}`, 'Record or generate voiceover for this video script.')
+    const scriptText = item.script_content || ''
+    try {
+      await enqueueRenderJob(supabase, userId, item.id, 'voiceover', 'elevenlabs', {
+        script: scriptText,
+        voiceId: '21m00Tcm4TlvDq8ikWAM',
+        speed: item.content_type === 'reel' ? 1.1 : 1.0,
+        priority: 8,
+      })
+    } catch {
+      // Fallback: skip voiceover generation if provider not configured
+    }
+
+    // Generate subtitles from script
+    if (scriptText) {
+      try {
+        const subtitle = await generateSubtitlesFromScript(supabase, userId, scriptText)
+        await storeSubtitles(supabase, userId, item.id, subtitle)
+        const subtitleContent = formatSubtitles(subtitle)
+        await supabase.from('video_projects').update({
+          subtitle_url: subtitleContent.substring(0, 2000),
+          subtitle_language: 'en',
+        }).eq('id', item.id)
+        subtitled++
+      } catch {}
+    }
+
+    await supabase.from('video_projects').update({
+      status: 'voiceover', assignee_id: agents.voiceover, updated_at: new Date().toISOString(),
+    }).eq('id', item.id)
     voiced++
   }
 
-  // voiceover → assets
-  const { data: voiceovers } = await supabase.from('video_projects').select('id, title').eq('user_id', userId).eq('status', 'voiceover').limit(5)
+  // voiceover → assets (generate b-roll descriptions)
+  const { data: voiceovers } = await supabase.from('video_projects').select('id, title, script_content').eq('user_id', userId).eq('status', 'voiceover').limit(5)
   for (const item of (voiceovers ?? []) as any[]) {
-    await supabase.from('video_projects').update({ status: 'assets', asset_count: Math.floor(Math.random() * 5) + 3, updated_at: new Date().toISOString() }).eq('id', item.id)
+    let bRollClips: any[] = []
+    try {
+      const clips = await processRenderJob(supabase, userId, 'b_roll', 'ai', {
+        title: item.title, script: item.script_content || '', clipCount: 5,
+      })
+      bRollClips = clips || []
+      if (bRollClips.length > 0) {
+        await supabase.from('video_projects').update({
+          b_roll_json: JSON.stringify(bRollClips),
+          updated_at: new Date().toISOString(),
+        }).eq('id', item.id)
+        bRollGenerated += bRollClips.length
+      }
+    } catch {}
+    await supabase.from('video_projects').update({
+      status: 'assets', asset_count: Math.max(3, bRollClips.length + 2),
+      updated_at: new Date().toISOString(),
+    }).eq('id', item.id)
     assetsCollected++
   }
 
@@ -140,22 +213,21 @@ export async function advanceVideoStage(supabase: SupabaseClient, userId: string
   const { data: assets } = await supabase.from('video_projects').select('id, title, content_type').eq('user_id', userId).eq('status', 'assets').limit(5)
   for (const item of (assets ?? []) as any[]) {
     const agentKey = editAgentMap[item.content_type] || 'short_editor'
-    await supabase.from('video_projects').update({ status: 'editing', assignee_id: agents[agentKey as keyof typeof agents] || agents.short_editor, updated_at: new Date().toISOString() }).eq('id', item.id)
-    await assignTaskToEmployee(supabase, userId, agents[agentKey as keyof typeof agents] || agents.short_editor, `Edit video: ${item.title}`, `Edit this ${item.content_type || 'short'} video project.`)
+    await supabase.from('video_projects').update({
+      status: 'editing', assignee_id: agents[agentKey as keyof typeof agents] || agents.short_editor,
+      updated_at: new Date().toISOString(),
+    }).eq('id', item.id)
     edited++
   }
 
-  // editing → thumbnail
-  const { data: editing } = await supabase.from('video_projects').select('id, title').eq('user_id', userId).eq('status', 'editing').limit(5)
+  // editing → thumbnail (AI-generated)
+  const { data: editing } = await supabase.from('video_projects').select('id, title, hook_text').eq('user_id', userId).eq('status', 'editing').limit(5)
   for (const item of (editing ?? []) as any[]) {
-    const systemPrompt = 'You are a Thumbnail Designer. Describe a compelling thumbnail. Return JSON: {"thumbnail_description": "detailed description", "colors": ["c1"], "text_overlay": "string"}'
-    const result = await executeAgentTask(supabase, userId, null,
-      `Design a high-CTR thumbnail for "${item.title}" video.`, { systemPrompt }
-    )
-    let thumb = ''
-    try { thumb = JSON.parse(result.response || '{}').thumbnail_description || result.response } catch { thumb = result.response || '' }
+    const thumbResult = await processRenderJob(supabase, userId, 'thumbnail', 'ai', {
+      title: item.title, hook: item.hook_text,
+    })
     await supabase.from('video_projects').update({
-      status: 'thumbnail', thumbnail_url: thumb.substring(0, 500),
+      status: 'thumbnail', thumbnail_url: thumbResult?.description || 'AI-generated thumbnail',
       assignee_id: agents.thumbnail, updated_at: new Date().toISOString(),
     }).eq('id', item.id)
     thumbnailed++
@@ -164,11 +236,13 @@ export async function advanceVideoStage(supabase: SupabaseClient, userId: string
   // thumbnail → review
   const { data: thumbnails } = await supabase.from('video_projects').select('id').eq('user_id', userId).eq('status', 'thumbnail').limit(5)
   for (const item of (thumbnails ?? []) as any[]) {
-    await supabase.from('video_projects').update({ status: 'review', assignee_id: agents.director, updated_at: new Date().toISOString() }).eq('id', item.id)
+    await supabase.from('video_projects').update({
+      status: 'review', assignee_id: agents.director, updated_at: new Date().toISOString(),
+    }).eq('id', item.id)
     reviewed++
   }
 
-  // review → scheduled (auto-schedule 2-14 days out)
+  // review → scheduled
   const { data: reviews } = await supabase.from('video_projects').select('id').eq('user_id', userId).eq('status', 'review').limit(10)
   for (const item of (reviews ?? []) as any[]) {
     const daysOut = Math.floor(Math.random() * 12) + 2
@@ -195,7 +269,6 @@ export async function advanceVideoStage(supabase: SupabaseClient, userId: string
     }).eq('id', item.id)
     published++
 
-    // Store viral patterns in Company Brain
     if (viralScore >= 70) {
       await storeMemory(supabase, userId, {
         category: 'viral_pattern', tags: [item.platform || 'youtube', 'viral', item.content_type || 'short'],
@@ -204,7 +277,7 @@ export async function advanceVideoStage(supabase: SupabaseClient, userId: string
     }
   }
 
-  return { scripted, voiced, assetsCollected, edited, thumbnailed, reviewed, scheduled, published }
+  return { scripted, storyboarded, voiced, subtitled, bRollGenerated, assetsCollected, edited, thumbnailed, reviewed, scheduled, published }
 }
 
 export async function getVideoMetrics(supabase: SupabaseClient, userId: string): Promise<VideoMetrics> {
@@ -234,6 +307,7 @@ export async function getVideoMetrics(supabase: SupabaseClient, userId: string):
 
   const { data: campaigns } = await supabase.from('video_campaigns').select('status').eq('user_id', userId)
   const allCampaigns = (campaigns ?? []) as any[]
+  const renderStats = await getRenderQueueStats(supabase, userId)
 
   return {
     total: allItems.length, byStage, byPlatform,
@@ -241,6 +315,7 @@ export async function getVideoMetrics(supabase: SupabaseClient, userId: string):
     totalViews, totalLikes, totalComments, totalShares,
     avgViralScore: viralCount > 0 ? Math.round(viralScoreSum / viralCount) : 0,
     publishedThisWeek, publishedThisMonth,
+    renderQueueStats: renderStats,
   }
 }
 
@@ -257,8 +332,9 @@ export async function getVideoPipeline(supabase: SupabaseClient, userId: string)
 }
 
 export async function runFullVideoCycle(supabase: SupabaseClient, userId: string): Promise<{
-  ideasGenerated: number; scripted: number; voiced: number; edited: number
-  thumbnailed: number; reviewed: number; scheduled: number; published: number
+  ideasGenerated: number; storyboarded: number; scripted: number; voiced: number
+  subtitled: number; bRollGenerated: number; edited: number; thumbnailed: number
+  reviewed: number; scheduled: number; published: number
 }> {
   await ensureVideoAgents(supabase, userId)
   const ideasGenerated = await generateVideoIdeas(supabase, userId)
@@ -269,9 +345,10 @@ export async function runFullVideoCycle(supabase: SupabaseClient, userId: string
     category: 'content_strategy', tags: ['video_cycle'],
     content: { ideasGenerated, ...stages, metrics, runAt: new Date().toISOString() },
   })
+
   await supabase.from('execution_logs').insert([{
     user_id: userId, command_id: null, action: '[Video] Cycle completed', module: 'content', status: 'success',
-    message: `Ideas: ${ideasGenerated}, Scripted: ${stages.scripted}, Published: ${stages.published}`,
+    message: `Ideas: ${ideasGenerated}, Scripted: ${stages.scripted}, Storyboarded: ${stages.storyboarded}, Subtitled: ${stages.subtitled}, Published: ${stages.published}`,
   }])
 
   return { ideasGenerated, ...stages }

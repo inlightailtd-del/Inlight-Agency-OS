@@ -1,19 +1,18 @@
 import { BaseProvider } from './provider'
 import type { ActionResponse, SyncResult } from './types'
 import { FacebookProvider, InstagramProvider, XProvider, YouTubeProvider, OutlookProvider, ClayProvider } from './social-providers'
-
-// ─── HubSpot ─────────────────────────────────────────────
-export class HubSpotProvider extends BaseProvider {
-  protected async handleAction(action: string, params: Record<string, any>): Promise<any> {
-    switch (action) {
-      case 'create_contact': return { id: 'hs_' + Date.now(), email: params.email, status: 'created' }
-      case 'update_contact': return { id: params.contactId, status: 'updated' }
-      case 'create_deal': return { id: 'deal_' + Date.now(), value: params.value, stage: params.stage }
-      case 'sync_contacts': return { synced: params.ids?.length || 0 }
-      default: throw new Error(`HubSpot: unknown action ${action}`)
-    }
-  }
-}
+import { RunwayProvider, VeoProvider, PikaProvider, KlingProvider } from './video-providers'
+import { ElevenLabsProvider, WhisperProvider } from './voice-providers'
+import { WhatsAppProvider } from './whatsapp-provider'
+import { FacebookAdsProvider, GoogleAdsProvider, LinkedInAdsProvider, TikTokAdsProvider } from './ad-providers'
+import { FigmaProvider, CanvaProvider } from './design-providers'
+import { GitHubProvider, GitLabProvider } from './git-providers'
+import { VercelProvider, CloudflareProvider } from './deploy-providers'
+import {
+  StripeProvider, PaddleProvider, ResendProvider, HubSpotProvider, CalendlyProvider,
+  SalesforceProvider, SlackProvider, DiscordProvider,
+  TelegramProvider, AirtableProvider, N8nProvider, MakeProvider,
+} from './automation-providers'
 
 // ─── Twilio ──────────────────────────────────────────────
 export class TwilioProvider extends BaseProvider {
@@ -27,18 +26,6 @@ export class TwilioProvider extends BaseProvider {
   }
 }
 
-// ─── Calendly ─────────────────────────────────────────────
-export class CalendlyProvider extends BaseProvider {
-  protected async handleAction(action: string, params: Record<string, any>): Promise<any> {
-    switch (action) {
-      case 'create_event': return { eventUri: 'https://calendly.com/event/' + Date.now(), status: 'scheduled', invitee: params.email, time: params.time }
-      case 'get_events': return { events: [], total: 0 }
-      case 'cancel_event': return { eventUri: params.eventUri, status: 'canceled' }
-      default: throw new Error(`Calendly: unknown action ${action}`)
-    }
-  }
-}
-
 // ─── LinkedIn (Real API) ──────────────────────────────────
 export class LinkedInProvider extends BaseProvider {
   protected async handleAction(action: string, params: Record<string, any>): Promise<any> {
@@ -47,7 +34,6 @@ export class LinkedInProvider extends BaseProvider {
     const token = this.credentials?.access_token
     if (!token) throw new Error('LinkedIn: no access_token in credentials')
 
-    // Step 1: Resolve the user's LinkedIn profile URN
     const meRes = await fetch('https://api.linkedin.com/v2/userinfo', {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -55,7 +41,6 @@ export class LinkedInProvider extends BaseProvider {
     const me = await meRes.json()
     const authorUrn = `urn:li:person:${me.sub}`
 
-    // Step 2: Create a UGC post
     const body = {
       author: authorUrn,
       lifecycleState: 'PUBLISHED',
@@ -101,7 +86,6 @@ export class GmailProvider extends BaseProvider {
         const body = params.body || params.message || ''
         if (!to) throw new Error('Gmail: missing recipient (to)')
 
-        // Build RFC 2822 message
         const message = [
           `To: ${to}`,
           `Subject: ${subject}`,
@@ -111,7 +95,6 @@ export class GmailProvider extends BaseProvider {
           body,
         ].join('\r\n')
 
-        // Base64url encode
         const encoded = Buffer.from(message).toString('base64url')
 
         const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
@@ -143,18 +126,6 @@ export class GmailProvider extends BaseProvider {
 
       default:
         throw new Error(`Gmail: unknown action ${action}`)
-    }
-  }
-}
-
-// ─── Stripe ──────────────────────────────────────────────
-export class StripeProvider extends BaseProvider {
-  protected async handleAction(action: string, params: Record<string, any>): Promise<any> {
-    switch (action) {
-      case 'create_payment': return { paymentIntent: 'pi_' + Date.now(), amount: params.amount, status: 'succeeded', currency: params.currency || 'usd' }
-      case 'create_invoice': return { invoiceId: 'inv_' + Date.now(), amount: params.amount, status: 'draft' }
-      case 'get_balance': return { balance: 50000, currency: 'usd', pending: 1200 }
-      default: throw new Error(`Stripe: unknown action ${action}`)
     }
   }
 }
@@ -196,11 +167,34 @@ export class ApolloProvider extends BaseProvider {
 // ─── Factory ──────────────────────────────────────────────
 export function createProvider(supabase: any, userId: string, provider: string): BaseProvider {
   const map: Record<string, new (s: any, u: string, p: string) => BaseProvider> = {
-    hubspot: HubSpotProvider, twilio: TwilioProvider, gmail: GmailProvider,
-    calendly: CalendlyProvider, linkedin: LinkedInProvider, stripe: StripeProvider,
-    vapi: VapiProvider, bland_ai: BlandAIProvider, apollo: ApolloProvider,
-    facebook: FacebookProvider, instagram: InstagramProvider, x: XProvider,
-    youtube: YouTubeProvider, outlook: OutlookProvider, clay: ClayProvider,
+    // Communication
+    gmail: GmailProvider, outlook: OutlookProvider, resend: ResendProvider, slack: SlackProvider,
+    discord: DiscordProvider, telegram: TelegramProvider, twilio: TwilioProvider,
+    whatsapp: WhatsAppProvider,
+    // Social
+    linkedin: LinkedInProvider, facebook: FacebookProvider, instagram: InstagramProvider,
+    x: XProvider, youtube: YouTubeProvider,
+    // CRM & Sales
+    hubspot: HubSpotProvider, salesforce: SalesforceProvider, apollo: ApolloProvider,
+    calendly: CalendlyProvider, clay: ClayProvider,
+    // Payments
+    stripe: StripeProvider, paddle: PaddleProvider,
+    // Data
+    airtable: AirtableProvider,
+    // AI & Voice
+    vapi: VapiProvider, bland_ai: BlandAIProvider,
+    elevenlabs: ElevenLabsProvider, whisper: WhisperProvider,
+    run: RunwayProvider, veo: VeoProvider, pika: PikaProvider, kling: KlingProvider,
+    // Ads
+    facebook_ads: FacebookAdsProvider, google_ads: GoogleAdsProvider,
+    linkedin_ads: LinkedInAdsProvider, tiktok_ads: TikTokAdsProvider,
+    // Design
+    figma: FigmaProvider, canva: CanvaProvider,
+    // Dev & Deploy
+    github: GitHubProvider, gitlab: GitLabProvider,
+    vercel: VercelProvider, cloudflare: CloudflareProvider,
+    // Automation
+    n8n: N8nProvider, make: MakeProvider,
   }
   const Klass = map[provider]
   if (!Klass) throw new Error(`No provider implementation for: ${provider}`)
