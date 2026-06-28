@@ -4,5 +4,4 @@
   "installCommand": "npm install",
   "outputDirectory": "",
   "devCommand": "next dev",
-  "nodeVersion": "20.x"
 }
