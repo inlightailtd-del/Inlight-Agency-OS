@@ -322,14 +322,26 @@ function generate404Page(siteName: string, design: DesignSystem | null, theme: T
 }
 
 function generateTailwindConfig(design: DesignSystem | null, theme: ThemeConfig | null): string {
-  const colors = theme?.colors?.light || design?.colors || {}
+  const tc = theme?.colors?.light
+  const dc = design?.colors
   return `/** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./**/*.html'],
   theme: {
     extend: {
-      colors: ${JSON.stringify({ primary: colors.primary || '#3b82f6', secondary: colors.secondary || '#8b5cf6', accent: colors.accent || '#06b6d4', background: colors.background || '#ffffff', text: colors.text || '#0f172a', muted: colors.muted || '#64748b', surface: colors.surface || '#f8fafc' })},
-      fontFamily: { heading: ['${theme?.fonts?.heading || design?.typography?.headings?.font || 'Inter'}', 'sans-serif'], body: ['${theme?.fonts?.body || design?.typography?.body?.font || 'Inter'}', 'sans-serif'] },
+      colors: {
+        primary: '${tc?.primary || dc?.primary || '#3b82f6'}',
+        secondary: '${tc?.secondary || dc?.secondary || '#8b5cf6'}',
+        accent: '${tc?.accent || dc?.accent || '#06b6d4'}',
+        background: '${tc?.background || dc?.background || '#ffffff'}',
+        text: '${tc?.text || dc?.text || '#0f172a'}',
+        muted: '${tc?.muted || dc?.muted || '#64748b'}',
+        surface: '${tc?.surface || dc?.background || '#f8fafc'}',
+      },
+      fontFamily: {
+        heading: ['${theme?.fonts?.heading || design?.typography?.headings?.font || 'Inter'}', 'sans-serif'],
+        body: ['${theme?.fonts?.body || design?.typography?.body?.font || 'Inter'}', 'sans-serif'],
+      },
     },
   },
 }`
