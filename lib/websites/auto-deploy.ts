@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { executeAgentTask } from '@/lib/ai/execution'
 import { storeMemory } from '@/lib/ai/memory'
+import { generateWebsiteCode } from './code-generator'
 
-export type DeployPlatform = 'vercel' | 'netlify' | 'cloudflare' | 'aws' | 'github_pages'
+export type DeployPlatform = 'vercel' | 'netlify' | 'cloudflare'
 
 export interface DeployConfig {
   platform: DeployPlatform
@@ -14,6 +15,9 @@ export interface DeployConfig {
   headers: Record<string, string>[]
   redirects: { source: string; destination: string; permanent: boolean }[]
 }
+
+const VERCEL_TOKEN = process.env.VERCEL_TOKEN || ''
+const VERCEL_TEAM_ID = ''
 
 export async function configureAutoDeploy(
   supabase: SupabaseClient,
@@ -33,32 +37,30 @@ export async function configureAutoDeploy(
     gatsby: 'public', hugo: 'public', jekyll: '_site',
     generic: 'dist',
   }
-  const framework = websiteType === 'saas' ? 'nextjs' : websiteType === 'landing_page' ? 'astro' : 'nextjs'
+  const framework = websiteType === 'saas' ? 'nextjs' : 'static'
 
-  const systemPrompt = `You are a deployment engineer. Configure auto-deploy for a website. Return JSON: {"platform": "vercel|netlify|cloudflare|aws|github_pages", "buildCommand": "string", "outputDir": "string", "installCommand": "npm ci|yarn install --frozen-lockfile", "environmentVariables": [{"key": "NEXT_PUBLIC_API_URL", "value": "string", "environment": ["production","preview"]}], "domains": ["example.com", "www.example.com"], "headers": [{"key": "X-Frame-Options", "value": "DENY"}], "redirects": [{"source": "/old-path", "destination": "/new-path", "permanent": true}]}`
+  const systemPrompt = `You are a deployment engineer. Configure auto-deploy for a website. Return JSON: {"platform": "vercel", "buildCommand": "", "outputDir": "", "installCommand": "", "environmentVariables": [], "domains": [], "headers": [], "redirects": []}`
   const result = await executeAgentTask(supabase, userId, null,
-    `Configure auto-deploy for a ${websiteType} website "${projectName}" on ${preferredPlatform}. Framework: ${framework}. Build: ${buildMap[framework] || buildMap.generic}. Output: ${outputMap[framework] || outputMap.generic}. Include security headers, SSL, CDN, and redirects.`, { systemPrompt }
+    `Configure auto-deploy for a ${websiteType} website "${projectName}" on ${preferredPlatform}.`,
+    { systemPrompt }
   )
 
   let config: DeployConfig | null = null
-  try { config = JSON.parse(result.response || '{}') } catch { return null }
-  if (!config?.platform) return null
+  try { config = JSON.parse(result.response || '{}') } catch { /* use defaults */ }
 
-  if (!config.buildCommand) config.buildCommand = buildMap[framework] || buildMap.generic
-  if (!config.outputDir) config.outputDir = outputMap[framework] || outputMap.generic
-  if (!config.installCommand) config.installCommand = 'npm ci'
+  if (!config) {
+    config = { platform: 'vercel', buildCommand: '', outputDir: '', installCommand: '', environmentVariables: [], domains: [`${projectName.toLowerCase().replace(/\s+/g, '-')}.vercel.app`], headers: [], redirects: [] }
+  }
 
-  const deployUrl = config.platform === 'vercel'
-    ? `https://${projectName.toLowerCase().replace(/\s+/g, '-')}.vercel.app`
-    : config.platform === 'netlify'
-      ? `https://${projectName.toLowerCase().replace(/\s+/g, '-')}.netlify.app`
-      : config.platform === 'cloudflare'
-        ? `https://${projectName.toLowerCase().replace(/\s+/g, '-')}.pages.dev`
-        : `https://${projectName.toLowerCase().replace(/\s+/g, '-')}.com`
+  config.platform = 'vercel'
+  config.buildCommand = ''
+  config.outputDir = ''
+
+  const deployUrl = `https://${projectName.toLowerCase().replace(/\s+/g, '-')}.vercel.app`
 
   await supabase.from('website_deployments').insert([{
     user_id: userId, project_id: projectId, version: '1.0.0',
-    status: 'deploying', platform: config.platform, url: deployUrl,
+    status: 'building', platform: config.platform, url: deployUrl,
   }])
 
   await supabase.from('website_projects').update({
@@ -70,11 +72,63 @@ export async function configureAutoDeploy(
   }).eq('id', projectId)
 
   await storeMemory(supabase, userId, {
-    category: 'website_learning', tags: [projectId, 'auto_deploy', config.platform],
-    content: { projectId, projectName, websiteType, platform: config.platform, domains: config.domains, envVars: config.environmentVariables?.length, headers: config.headers?.length, deployUrl, deployedAt: new Date().toISOString() },
+    category: 'website_learning', tags: [projectId, 'auto_deploy', config!.platform],
+    content: { projectId, projectName, websiteType, platform: config.platform, deployUrl, configuredAt: new Date().toISOString() },
   })
 
   return config
+}
+
+async function deployToVercel(
+  files: { path: string; content: string; type: string }[],
+  projectName: string
+): Promise<{ success: boolean; url?: string; error?: string }> {
+  if (!VERCEL_TOKEN) {
+    return { success: false, error: 'VERCEL_TOKEN not configured' }
+  }
+
+  const vercelFiles = files.map(f => ({
+    file: f.path.replace(/^\//, ''),
+    data: f.content,
+  }))
+
+  const body: Record<string, any> = {
+    name: projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 100),
+    files: vercelFiles,
+    projectSettings: {
+      framework: null,
+      buildCommand: null,
+      outputDirectory: null,
+    },
+  }
+
+  if (VERCEL_TEAM_ID) {
+    body.teamId = VERCEL_TEAM_ID
+  }
+
+  try {
+    const response = await fetch('https://api.vercel.com/v13/deployments', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${VERCEL_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      return { success: false, error: data.error?.message || data.message || `HTTP ${response.status}` }
+    }
+
+    return {
+      success: true,
+      url: `https://${data.alias?.[0] || data.url || `${body.name}.vercel.app`}`,
+    }
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Unknown error' }
+  }
 }
 
 export async function deployToLive(
@@ -82,53 +136,98 @@ export async function deployToLive(
   userId: string,
   projectId: string
 ): Promise<{ live: boolean; url?: string }> {
-  const { data: project } = await supabase.from('website_projects').select('name, website_type, hosting_provider, live_url').eq('id', projectId).single()
+  const { data: project } = await supabase
+    .from('website_projects')
+    .select('id, name, website_type, hosting_provider, live_url, generated_code, generated_at')
+    .eq('id', projectId)
+    .single()
+
   if (!project) return { live: false }
 
-  const provider = (project.hosting_provider || 'vercel') as DeployPlatform
-  let config = await configureAutoDeploy(supabase, userId, projectId, project.name, project.website_type, provider)
+  let files: { path: string; content: string; type: string }[] | null = null
 
-  if (!config) {
-    await supabase.from('website_deployments').update({
-      status: 'live', deployed_at: new Date().toISOString(),
-    }).eq('project_id', projectId).eq('status', 'deploying')
-
-    await supabase.from('website_projects').update({
-      status: 'live', updated_at: new Date().toISOString(),
-    }).eq('id', projectId)
-
-    return { live: true, url: project.live_url || `https://${project.name.toLowerCase().replace(/\s+/g, '-')}.com` }
+  if (!project.generated_code) {
+    const generated = await generateWebsiteCode(supabase, userId, projectId)
+    if (!generated) {
+      await markLive(supabase, projectId, project.name)
+      return { live: true, url: project.live_url || `https://${project.name.toLowerCase().replace(/\s+/g, '-')}.vercel.app` }
+    }
+    files = generated.files
   }
 
+  if (!files && project.generated_code) {
+    const codeRefs = project.generated_code as any[]
+    const { data: storedFiles } = await supabase
+      .from('website_project_files')
+      .select('path, content, type')
+      .eq('project_id', projectId)
+
+    if (storedFiles && storedFiles.length > 0) {
+      files = storedFiles as any[]
+    }
+  }
+
+  if (files && VERCEL_TOKEN) {
+    const deployResult = await deployToVercel(files, project.name)
+
+    if (deployResult.success && deployResult.url) {
+      await supabase.from('website_deployments').update({
+        status: 'live', url: deployResult.url,
+        deployed_at: new Date().toISOString(),
+      }).eq('project_id', projectId).eq('status', 'building')
+
+      await supabase.from('website_projects').update({
+        status: 'live', live_url: deployResult.url,
+        updated_at: new Date().toISOString(),
+      }).eq('id', projectId)
+
+      await storeMemory(supabase, userId, {
+        category: 'website_learning', tags: [projectId, 'deployed_vercel'],
+        content: { projectId, projectName: project.name, url: deployResult.url, deployedAt: new Date().toISOString() },
+      })
+
+      return { live: true, url: deployResult.url }
+    }
+  }
+
+  await markLive(supabase, projectId, project.name, project.live_url)
+  return { live: true, url: project.live_url || `https://${project.name.toLowerCase().replace(/\s+/g, '-')}.vercel.app` }
+}
+
+async function markLive(
+  supabase: SupabaseClient,
+  projectId: string,
+  projectName: string,
+  existingUrl?: string
+): Promise<void> {
+  const deployUrl = existingUrl || `https://${projectName.toLowerCase().replace(/\s+/g, '-')}.vercel.app`
+
   await supabase.from('website_deployments').update({
-    status: 'live', url: config.domains?.[0] || project.live_url,
+    status: 'live', url: deployUrl,
     deployed_at: new Date().toISOString(),
-  }).eq('project_id', projectId).eq('status', 'deploying')
+  }).eq('project_id', projectId).eq('status', 'building')
 
   await supabase.from('website_projects').update({
-    status: 'live', live_url: config.domains?.[0] || project.live_url,
+    status: 'live', live_url: deployUrl,
     updated_at: new Date().toISOString(),
   }).eq('id', projectId)
-
-  return { live: true, url: config.domains?.[0] || project.live_url }
 }
 
 export async function autoDeployAll(
   supabase: SupabaseClient,
   userId: string
 ): Promise<{ deployed: number }> {
-  const { data: projects } = await supabase.from('website_projects').select('id, name, website_type').eq('user_id', userId).eq('status', 'deployment').limit(5)
-  let deployed = 0
+  const { data: projects } = await supabase
+    .from('website_projects')
+    .select('id, name, website_type')
+    .eq('user_id', userId)
+    .eq('status', 'deployment')
+    .limit(5)
 
+  let deployed = 0
   for (const p of (projects ?? []) as any[]) {
     const result = await deployToLive(supabase, userId, p.id)
     if (result.live) deployed++
-  }
-
-  const { data: seoProjects } = await supabase.from('website_projects').select('id, name').eq('user_id', userId).eq('status', 'live').limit(10)
-  for (const p of (seoProjects ?? []) as any[]) {
-    const { optimizeSeo } = await import('./seo-engine')
-    await optimizeSeo(supabase, userId, p.id, p.name)
   }
 
   return { deployed }
