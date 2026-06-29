@@ -1,17 +1,24 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient, parseCookieHeader } from '@supabase/ssr'
 
-const publicRoutes = ['/login', '/signup', '/']
+const publicRoutes = ['/login', '/signup', '/', '/api/test']
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request,
-  })
+  let response = NextResponse.next({ request })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseKey) {
+    const path = request.nextUrl.pathname
+    if (path.startsWith('/dashboard') && !path.startsWith('/login')) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+    return response
+  }
+
+  try {
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
         getAll() {
           return parseCookieHeader(request.headers.get('cookie') ?? '')
@@ -22,23 +29,23 @@ export async function middleware(request: NextRequest) {
           })
         },
       },
+    })
+
+    const { data: { user } } = await supabase.auth.getUser()
+    const path = request.nextUrl.pathname
+
+    if (user) {
+      if (path === '/login' || path === '/signup' || path === '/') {
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+      }
+    } else {
+      if (path.startsWith('/dashboard')) {
+        return NextResponse.redirect(new URL('/login', request.url))
+      }
     }
-  )
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  const path = request.nextUrl.pathname
-
-  // If user is authenticated
-  if (user) {
-    // Redirect from auth pages to dashboard
-    if (path === '/login' || path === '/signup' || path === '/') {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
-    }
-  } else {
-    // If user is not authenticated, protect all /dashboard/* routes
+  } catch {
+    // If Supabase auth fails, allow public routes
+    const path = request.nextUrl.pathname
     if (path.startsWith('/dashboard')) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
