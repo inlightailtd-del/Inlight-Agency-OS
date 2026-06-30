@@ -173,24 +173,9 @@ export async function advanceWebsiteStage(supabase: SupabaseClient, userId: stri
     const { generateWebsiteCode } = await import('./code-generator')
     const generated = await generateWebsiteCode(supabase, userId, item.id)
 
-    if (generated && generated.files.length > 0) {
-      const fileRecords = generated.files.map(f => ({
-        user_id: userId, project_id: item.id,
-        path: f.path, content: f.content, type: f.type, size: f.content.length,
-      }))
-      await supabase.from('website_project_files').insert(fileRecords)
-
-      await supabase.from('website_projects').update({
-        status: 'development',
-        generated_code: generated.files.map(f => ({ path: f.path, type: f.type, size: f.content.length })),
-        generated_at: generated.generatedAt,
-        updated_at: new Date().toISOString(),
-      }).eq('id', item.id)
-    } else {
-      await supabase.from('website_projects').update({
-        status: 'development', updated_at: new Date().toISOString(),
-      }).eq('id', item.id)
-    }
+    await supabase.from('website_projects').update({
+      status: 'development', updated_at: new Date().toISOString(),
+    }).eq('id', item.id)
 
     await assignTaskToEmployee(supabase, userId, agents.frontend, `Build: ${item.name}`, `Develop ${item.website_type} website (${item.pages || 1} pages)`)
     developments++

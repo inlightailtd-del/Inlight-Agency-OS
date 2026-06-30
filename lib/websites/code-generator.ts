@@ -94,6 +94,12 @@ export async function generateWebsiteCode(
     generated_at: new Date().toISOString(),
   }).eq('id', projectId)
 
+  const fileRecords = files.map(f => ({
+    user_id: userId, project_id: projectId,
+    path: f.path, content: f.content, type: f.type, size: f.content.length,
+  }))
+  await supabase.from('website_project_files').insert(fileRecords)
+
   await storeMemory(supabase, userId, {
     category: 'website_learning',
     tags: [projectId, 'code_generated', siteType],
