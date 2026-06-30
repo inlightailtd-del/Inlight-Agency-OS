@@ -40,6 +40,16 @@ export async function generateWebsiteCode(
   const description = project.description || ''
   const title = siteName
 
+  const designColors = design?.colors
+  const themeColors = theme?.colors?.light
+  const primary = themeColors?.primary || designColors?.primary || '#3b82f6'
+  const bg = themeColors?.background || designColors?.background || '#ffffff'
+  const text = themeColors?.text || designColors?.text || '#0f172a'
+  const headingFont = theme?.fonts?.heading || 'Inter'
+  const bodyFont = theme?.fonts?.body || 'Inter'
+  const style = theme?.style || 'modern'
+  const navItems = wireframe?.globalElements?.navigation || ['Home', 'About', 'Services', 'Contact']
+
   const baseHtml = await generateHtmlPage(supabase, userId, {
     title, description, siteName, siteType, pagePath: '/',
     isHome: true, spec, design, theme, wireframe,
@@ -47,28 +57,14 @@ export async function generateWebsiteCode(
   if (!baseHtml) return null
 
   files.push({ path: '/index.html', content: baseHtml, type: 'text/html' })
-  files.push({ path: '/404.html', content: generate404Page(siteName, design, theme), type: 'text/html' })
+  files.push({ path: '/404.html', content: generate404Page(siteName, primary, bg, text, headingFont, bodyFont, navItems), type: 'text/html' })
 
   if (wireframe?.pages) {
     for (const page of wireframe.pages) {
       if (page.path === '/' || !page.path) continue
-      const html = await generateHtmlPage(supabase, userId, {
-        title: `${page.name} | ${siteName}`,
-        description: page.purpose || description,
-        siteName, siteType, pagePath: page.path,
-        isHome: false, spec, design, theme, wireframe,
-        currentPage: page,
-      })
-      if (html) {
-        const cleanPath = page.path.endsWith('/') ? `${page.path}index.html` : `${page.path}.html`
-        files.push({ path: cleanPath, content: html, type: 'text/html' })
-      }
-    }
-
-    for (const page of wireframe.pages) {
-      if (page.priority === 'high' || page.path === '/') continue
-      const keys = page.path.replace(/^\//, '').split('/').filter(Boolean)
-      if (keys.length > 1) continue
+      const cleanPath = page.path.endsWith('/') ? `${page.path}index.html` : `${page.path}.html`
+      const html = generateSubPage(siteName, page.name || 'Page', primary, bg, text, headingFont, bodyFont, navItems)
+      files.push({ path: cleanPath, content: html, type: 'text/html' })
     }
   }
 
@@ -314,10 +310,81 @@ function generateFallbackPage(
 </html>`
 }
 
-function generate404Page(siteName: string, design: DesignSystem | null, theme: ThemeConfig | null): string {
-  const primary = theme?.colors?.light?.primary || design?.colors?.primary || '#3b82f6'
-  const bg = theme?.colors?.light?.background || design?.colors?.background || '#ffffff'
-  const text = theme?.colors?.light?.text || design?.colors?.text || '#0f172a'
+function generateSubPage(siteName: string, pageName: string, primary: string, bg: string, text: string, headingFont: string, bodyFont: string, navItems: string[]): string {
+  const navLinks = navItems.map(item =>
+    `<a href="/${item.toLowerCase() === 'home' ? '' : item.toLowerCase()}" class="text-gray-300 hover:text-white transition px-3 py-2 text-sm font-medium">${item}</a>`
+  ).join('\n          ')
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${pageName} | ${siteName}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=${headingFont.replace(' ', '+')}:wght@400;600;700;800&family=${bodyFont.replace(' ', '+')}:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: '${bodyFont}', sans-serif; background: ${bg}; color: ${text}; line-height: 1.6; }
+    h1, h2, h3, h4 { font-family: '${headingFont}', sans-serif; }
+  </style>
+</head>
+<body>
+  <header class="sticky top-0 z-50 backdrop-blur-md border-b" style="background: ${bg}dd; border-color: ${primary}22">
+    <nav class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <a href="/" class="text-2xl font-bold" style="font-family: '${headingFont}', sans-serif; color: ${text}">${siteName}</a>
+      <div class="hidden md:flex items-center gap-1">
+        ${navLinks}
+      </div>
+      <button id="menuBtn" class="md:hidden p-2" onclick="document.getElementById('mobileMenu').classList.toggle('hidden')">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+    </nav>
+    <div id="mobileMenu" class="hidden md:hidden px-4 pb-4">
+      ${navItems.map(item => `<a href="/${item.toLowerCase() === 'home' ? '' : item.toLowerCase()}" class="block py-2 text-sm" style="color: ${text}cc">${item}</a>`).join('\n      ')}
+    </div>
+  </header>
+  <main>
+    <div class="max-w-6xl mx-auto px-4 py-16">
+      <h1 class="text-4xl md:text-5xl font-bold mb-6" style="font-family: '${headingFont}', sans-serif">${pageName}</h1>
+      <div class="prose max-w-none" style="color: ${text}">
+        <p class="text-lg mb-8" style="color: ${text}99">Welcome to our ${pageName.toLowerCase()} page. We are dedicated to providing exceptional service and innovative solutions tailored to your needs.</p>
+        <section class="mb-12">
+          <h2 class="text-2xl font-bold mb-4" style="color: ${primary}">Our Approach</h2>
+          <p>We combine cutting-edge technology with strategic thinking to deliver results that exceed expectations. Our team of experts works closely with you to understand your unique challenges and goals.</p>
+        </section>
+        <section class="mb-12">
+          <h2 class="text-2xl font-bold mb-4" style="color: ${primary}">Why Choose Us</h2>
+          <div class="grid md:grid-cols-3 gap-6 mt-6">
+            <div class="p-6 rounded-xl" style="background: ${primary}08">
+              <h3 class="text-lg font-semibold mb-2">Expert Team</h3>
+              <p class="text-sm" style="color: ${text}99">Skilled professionals with years of industry experience.</p>
+            </div>
+            <div class="p-6 rounded-xl" style="background: ${primary}08">
+              <h3 class="text-lg font-semibold mb-2">Proven Results</h3>
+              <p class="text-sm" style="color: ${text}99">Track record of delivering measurable business outcomes.</p>
+            </div>
+            <div class="p-6 rounded-xl" style="background: ${primary}08">
+              <h3 class="text-lg font-semibold mb-2">Innovation First</h3>
+              <p class="text-sm" style="color: ${text}99">Always at the forefront of technology and best practices.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <footer class="border-t py-12 px-4" style="background: ${text}08; border-color: ${primary}22">
+    <div class="max-w-6xl mx-auto text-center">
+      <p class="text-sm" style="color: ${text}77">&copy; ${new Date().getFullYear()} ${siteName}. All rights reserved.</p>
+    </div>
+  </footer>
+</body>
+</html>`
+}
+
+function generate404Page(siteName: string, primary: string, bg: string, text: string, headingFont: string, bodyFont: string, navItems: string[]): string {
+  const navLinks = navItems.map(item =>
+    `<a href="/${item.toLowerCase() === 'home' ? '' : item.toLowerCase()}" class="text-gray-300 hover:text-white transition px-3 py-2 text-sm font-medium">${item}</a>`
+  ).join('\n          ')
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>404 | ${siteName}</title><script src="https://cdn.tailwindcss.com"></script></head><body style="background:${bg};color:${text};font-family:system-ui"><div class="min-h-screen flex items-center justify-center"><div class="text-center"><h1 class="text-8xl font-bold mb-4" style="color:${primary}">404</h1><p class="text-xl mb-8">Page not found</p><a href="/" class="px-6 py-3 rounded-lg text-white inline-block" style="background:${primary}">Go Home</a></div></div></body></html>`
 }
 
