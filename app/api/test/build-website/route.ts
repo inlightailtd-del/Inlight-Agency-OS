@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { runFullWebsiteCycle } from '@/lib/websites/engine'
-import { deployToLive } from '@/lib/websites/auto-deploy'
+import { generateWebsiteCode } from '@/lib/websites/code-generator'
 
 const USER_ID = '66009792-1d0e-48ca-9a22-7e8f9ab3c7f8'
+const PROJECT_ID = 'e7118183-3424-40a5-a73f-d551249fb5f1'
 
 export async function GET(request: Request) {
   try {
@@ -18,78 +18,36 @@ export async function GET(request: Request) {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
-    const existing = await supabase
-      .from('website_projects')
-      .select('id')
-      .eq('user_id', USER_ID)
-      .eq('name', 'Inlight AI Agency')
-      .limit(1)
+    await supabase.from('website_projects').update({
+      status: 'design', updated_at: new Date().toISOString(),
+    }).eq('id', PROJECT_ID)
 
-    let projectId: string
-
-    if (existing.data && existing.data.length > 0) {
-      projectId = existing.data[0].id
-      const cycleResult = await runFullWebsiteCycle(supabase, USER_ID)
-      const deployResult = await deployToLive(supabase, USER_ID, projectId)
-
-      const { data: final } = await supabase
-        .from('website_projects')
-        .select('*')
-        .eq('id', projectId)
-        .single()
-
-      const { data: files } = await supabase
-        .from('website_project_files')
-        .select('path, type, size')
-        .eq('project_id', projectId)
-
-      return NextResponse.json({
-        success: true, projectId,
-        liveUrl: final?.live_url || null,
-        status: final?.status || 'unknown',
-        fileCount: files?.length || 0,
-        generatedAt: final?.generated_at || null,
-        cycleResult,
-        deployResult,
-      })
-    }
-
-    const newProject = await supabase.from('website_projects').insert([{
-      user_id: USER_ID,
-      name: 'Inlight AI Agency',
-      description: 'AI-powered digital agency offering marketing, development, and automation services. We help businesses grow with cutting-edge AI solutions.',
-      website_type: 'agency',
-      status: 'idea',
-      pages: 5,
-    }]).select().single()
-
-    if (!newProject.data) {
-      return NextResponse.json({ error: 'Failed to create project' }, { status: 500 })
-    }
-
-    projectId = newProject.data.id
-    const cycleResult = await runFullWebsiteCycle(supabase, USER_ID)
-    const deployResult = await deployToLive(supabase, USER_ID, projectId)
+    const startTime = Date.now()
+    const generated = await generateWebsiteCode(supabase, USER_ID, PROJECT_ID)
+    const elapsed = Date.now() - startTime
 
     const { data: final } = await supabase
       .from('website_projects')
-      .select('*')
-      .eq('id', projectId)
+      .select('id, status, generated_code, generated_at')
+      .eq('id', PROJECT_ID)
       .single()
 
     const { data: files } = await supabase
       .from('website_project_files')
       .select('path, type, size')
-      .eq('project_id', projectId)
+      .eq('project_id', PROJECT_ID)
 
     return NextResponse.json({
-      success: true, projectId,
-      liveUrl: final?.live_url || null,
-      status: final?.status || 'unknown',
+      success: !!generated,
+      projectId: PROJECT_ID,
+      elapsedMs: elapsed,
       fileCount: files?.length || 0,
       generatedAt: final?.generated_at || null,
-      cycleResult,
-      deployResult,
+      status: final?.status || 'unknown',
+      files: files || [],
+      generated_summary: generated ? {
+        pages: generated.pages, totalSize: generated.totalSize, fileCount: generated.files.length,
+      } : null,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message, stack: err.stack }, { status: 500 })

@@ -22,7 +22,7 @@ export async function generateWebsiteCode(
 ): Promise<GeneratedSite | null> {
   const { data: project } = await supabase
     .from('website_projects')
-    .select('id, name, website_type, description, pages, landing_page_spec, design_system, theme_config, wireframe_blueprint, seo_title, seo_description')
+    .select('id, name, website_type, description, pages, landing_page_spec, design_system, theme_config, wireframe_blueprint')
     .eq('id', projectId)
     .single()
 
