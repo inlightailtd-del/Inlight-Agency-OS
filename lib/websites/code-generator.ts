@@ -37,8 +37,8 @@ export async function generateWebsiteCode(
   const pages = project.pages || 1
   const siteName = project.name || 'Website'
   const siteType = project.website_type || 'business'
-  const description = project.seo_description || project.description || ''
-  const title = project.seo_title || siteName
+  const description = project.description || ''
+  const title = siteName
 
   const baseHtml = await generateHtmlPage(supabase, userId, {
     title, description, siteName, siteType, pagePath: '/',
