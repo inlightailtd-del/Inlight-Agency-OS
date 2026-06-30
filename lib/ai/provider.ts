@@ -75,7 +75,7 @@ async function callOllama(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: config.model, messages, stream: false }),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(120000),
   })
   if (!response.ok) throw new Error(`Ollama error: ${response.status}`)
   const data = await response.json()
@@ -97,7 +97,7 @@ async function callOpenAI(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.api_key}` },
     body: JSON.stringify({ model: config.model, messages }),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(120000),
   })
   if (!response.ok) throw new Error(`OpenAI error: ${response.status}`)
   const data = await response.json()
@@ -130,7 +130,7 @@ async function callAnthropic(
       system: systemMsg?.content,
       messages: userMsgs,
     }),
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(120000),
   })
   if (!response.ok) throw new Error(`Anthropic error: ${response.status}`)
   const data = await response.json()
@@ -148,16 +148,18 @@ async function callOpenRouter(
   messages: AIMessage[],
   startTime: number
 ): Promise<AIResponse> {
+  const apiKey = config.api_key || process.env.OPENROUTER_API_KEY || ''
+  const model = config.model || 'google/gemini-2.0-flash-lite-preview-02-05:free'
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.api_key}`,
+      Authorization: `Bearer ${apiKey}`,
       'HTTP-Referer': 'https://inlight.agency',
       'X-Title': 'Inlight Agency OS',
     },
-    body: JSON.stringify({ model: config.model || 'google/gemini-2.0-flash-lite-preview-02-05:free', messages }),
-    signal: AbortSignal.timeout(60000),
+    body: JSON.stringify({ model, messages }),
+    signal: AbortSignal.timeout(120000),
   })
   if (!response.ok) {
     const errBody = await response.text().catch(() => '')
